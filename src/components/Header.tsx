@@ -13,47 +13,47 @@ export const Header: React.FC<HeaderProps> = ({ status, onReset, onOpenOutput, h
     switch (status) {
       case 'processing':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-medium rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-            PROCESSING
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-medium rounded-full bg-[#382700] text-[#e3b341] border border-[#bb8009]/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#e3b341] animate-pulse" />
+            Processing
           </span>
         );
       case 'completed':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-medium rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            READY FOR PREMIERE
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-medium rounded-full bg-[#0d281e] text-[#3fb950] border border-[#2ea043]/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
+            Ready for Premiere
           </span>
         );
       case 'error':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-medium rounded bg-rose-500/10 text-rose-400 border border-rose-500/30">
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-            ERROR
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-medium rounded-full bg-[#3c1e22] text-[#f85149] border border-[#da3633]/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#f85149]" />
+            Error
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-medium rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
-            <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
-            IDLE
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-medium rounded-full bg-[#161b22] text-[#8b949e] border border-[#30363d]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#6e7681]" />
+            Idle
           </span>
         );
     }
   };
 
   return (
-    <header className="h-14 border-b border-[#24242c] bg-[#121215] px-5 flex items-center justify-between select-none">
+    <header className="h-14 border-b border-[#30363d] bg-[#161b22] px-5 flex items-center justify-between select-none">
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded bg-[#1e1e26] border border-[#30303c] flex items-center justify-center text-indigo-400">
-          <Layers className="w-4 h-4" />
+        <div className="w-8 h-8 rounded-md bg-[#21262d] border border-[#30363d] flex items-center justify-center text-[#c9d1d9]">
+          <Layers className="w-4 h-4 text-[#58a6ff]" />
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-sm font-semibold tracking-wide text-zinc-100 uppercase font-mono">SyncCut</h1>
-            <span className="text-[10px] text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-800/80 border border-zinc-700/60 font-mono">v0.1.0</span>
+            <h1 className="text-sm font-semibold tracking-wide text-[#f0f6fc] font-sans">SyncCut</h1>
+            <span className="text-[10px] text-[#8b949e] px-1.5 py-0.5 rounded-md bg-[#21262d] border border-[#30363d] font-mono">v0.1.0</span>
           </div>
-          <p className="text-[11px] text-zinc-500">AI Video-Audio Aligner & Premiere XML Engine</p>
+          <p className="text-[11px] text-[#8b949e]">AI Video-Audio Aligner & Premiere XML Engine</p>
         </div>
       </div>
 
@@ -63,9 +63,9 @@ export const Header: React.FC<HeaderProps> = ({ status, onReset, onOpenOutput, h
         {hasOutput && onOpenOutput && (
           <button
             onClick={onOpenOutput}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-300 bg-[#1a1a20] hover:bg-[#23232c] border border-[#323240] rounded transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#c9d1d9] bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] rounded-md transition-colors"
           >
-            <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
+            <FolderOpen className="w-3.5 h-3.5 text-[#58a6ff]" />
             Open Folder
           </button>
         )}
@@ -73,7 +73,7 @@ export const Header: React.FC<HeaderProps> = ({ status, onReset, onOpenOutput, h
         <button
           onClick={onReset}
           title="Reset All"
-          className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-[#1f1f26] rounded border border-transparent hover:border-[#323240] transition-colors"
+          className="p-1.5 text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#21262d] rounded-md border border-transparent hover:border-[#30363d] transition-colors"
         >
           <RefreshCw className="w-3.5 h-3.5" />
         </button>

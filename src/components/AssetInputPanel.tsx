@@ -53,10 +53,10 @@ export const AssetInputPanel: React.FC<AssetInputPanelProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-4 p-4 bg-[#141418] border border-[#24242c] rounded-lg">
-      <div className="flex items-center justify-between pb-3 border-b border-[#22222a]">
-        <span className="text-xs font-mono font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
-          <Folder className="w-3.5 h-3.5 text-indigo-400" />
+    <div className="flex flex-col gap-4 p-4 bg-[#161b22] border border-[#30363d] rounded-lg">
+      <div className="flex items-center justify-between pb-3 border-b border-[#21262d]">
+        <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#c9d1d9] flex items-center gap-2">
+          <Folder className="w-3.5 h-3.5 text-[#58a6ff]" />
           1. Project Assets & Sources
         </span>
       </div>
@@ -65,13 +65,13 @@ export const AssetInputPanel: React.FC<AssetInputPanelProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* Voice MP4 Selector */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-[11px] font-mono text-zinc-400 flex items-center justify-between">
+          <label className="text-[11px] font-mono text-[#8b949e] flex items-center justify-between">
             <span className="flex items-center gap-1.5">
-              <Mic className="w-3.5 h-3.5 text-indigo-400" />
+              <Mic className="w-3.5 h-3.5 text-[#58a6ff]" />
               Voiceover File (MP4/WAV)
             </span>
             {config.voicePath && (
-              <span className="text-[10px] text-emerald-400 flex items-center gap-1">
+              <span className="text-[10px] text-[#3fb950] flex items-center gap-1">
                 <CheckCircle2 className="w-3 h-3" /> Selected
               </span>
             )}
@@ -81,7 +81,7 @@ export const AssetInputPanel: React.FC<AssetInputPanelProps> = ({
               type="button"
               disabled={disabled}
               onClick={onPickVoice}
-              className="px-3 py-2 text-xs font-mono bg-[#1a1a22] hover:bg-[#22222c] border border-[#30303c] text-zinc-200 rounded flex-1 text-left truncate transition-colors disabled:opacity-50"
+              className="px-3 py-2 text-xs font-mono bg-[#0d1117] hover:bg-[#21262d] border border-[#30363d] text-[#c9d1d9] rounded-md flex-1 text-left truncate transition-colors disabled:opacity-50"
             >
               {config.voicePath ? getFileName(config.voicePath) : 'Click to select voice MP4/WAV...'}
             </button>
@@ -90,13 +90,13 @@ export const AssetInputPanel: React.FC<AssetInputPanelProps> = ({
 
         {/* Script TXT Selector */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-[11px] font-mono text-zinc-400 flex items-center justify-between">
+          <label className="text-[11px] font-mono text-[#8b949e] flex items-center justify-between">
             <span className="flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-indigo-400" />
+              <FileText className="w-3.5 h-3.5 text-[#58a6ff]" />
               Script Text File (.TXT)
             </span>
             {config.scriptPath && (
-              <span className="text-[10px] text-emerald-400 flex items-center gap-1">
+              <span className="text-[10px] text-[#3fb950] flex items-center gap-1">
                 <CheckCircle2 className="w-3 h-3" /> Selected
               </span>
             )}
@@ -106,7 +106,7 @@ export const AssetInputPanel: React.FC<AssetInputPanelProps> = ({
               type="button"
               disabled={disabled}
               onClick={onPickScript}
-              className="px-3 py-2 text-xs font-mono bg-[#1a1a22] hover:bg-[#22222c] border border-[#30303c] text-zinc-200 rounded flex-1 text-left truncate transition-colors disabled:opacity-50"
+              className="px-3 py-2 text-xs font-mono bg-[#0d1117] hover:bg-[#21262d] border border-[#30363d] text-[#c9d1d9] rounded-md flex-1 text-left truncate transition-colors disabled:opacity-50"
             >
               {config.scriptPath ? getFileName(config.scriptPath) : 'Click to select script .txt...'}
             </button>
@@ -116,13 +116,13 @@ export const AssetInputPanel: React.FC<AssetInputPanelProps> = ({
 
       {/* Output Workspace Directory */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-[11px] font-mono text-zinc-400 flex items-center justify-between">
+        <label className="text-[11px] font-mono text-[#8b949e] flex items-center justify-between">
           <span className="flex items-center gap-1.5">
-            <Folder className="w-3.5 h-3.5 text-indigo-400" />
+            <Folder className="w-3.5 h-3.5 text-[#58a6ff]" />
             Output Workspace (Destination Folder)
           </span>
           {config.outputDir && (
-            <span className="text-[10px] text-emerald-400 flex items-center gap-1">
+            <span className="text-[10px] text-[#3fb950] flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3" /> Set
             </span>
           )}
@@ -131,20 +131,20 @@ export const AssetInputPanel: React.FC<AssetInputPanelProps> = ({
           type="button"
           disabled={disabled}
           onClick={onPickOutputDir}
-          className="px-3 py-2 text-xs font-mono bg-[#1a1a22] hover:bg-[#22222c] border border-[#30303c] text-zinc-200 rounded text-left truncate transition-colors disabled:opacity-50"
+          className="px-3 py-2 text-xs font-mono bg-[#0d1117] hover:bg-[#21262d] border border-[#30363d] text-[#c9d1d9] rounded-md text-left truncate transition-colors disabled:opacity-50"
         >
           {config.outputDir || 'Click to choose output directory for Premiere XML...'}
         </button>
       </div>
 
       {/* YouTube B-Roll Sources */}
-      <div className="flex flex-col gap-2 pt-2 border-t border-[#202028]">
-        <label className="text-[11px] font-mono text-zinc-400 flex items-center justify-between">
+      <div className="flex flex-col gap-2 pt-2 border-t border-[#21262d]">
+        <label className="text-[11px] font-mono text-[#8b949e] flex items-center justify-between">
           <span className="flex items-center gap-1.5">
-            <Video className="w-3.5 h-3.5 text-rose-400" />
+            <Video className="w-3.5 h-3.5 text-[#f85149]" />
             YouTube Source Videos (B-Roll Sample Footage)
           </span>
-          <span className="text-[10px] text-zinc-500 font-mono">
+          <span className="text-[10px] text-[#6e7681] font-mono">
             {config.youtubeUrls.length} video(s) added
           </span>
         </label>
@@ -157,13 +157,13 @@ export const AssetInputPanel: React.FC<AssetInputPanelProps> = ({
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAddUrl()}
-            className="flex-1 px-3 py-1.5 text-xs bg-[#181820] border border-[#2c2c38] focus:border-indigo-500 rounded text-zinc-200 placeholder-zinc-600 outline-none transition-colors disabled:opacity-50"
+            className="flex-1 px-3 py-1.5 text-xs bg-[#0d1117] border border-[#30363d] focus:border-[#58a6ff] rounded-md text-[#f0f6fc] placeholder-[#6e7681] outline-none transition-colors disabled:opacity-50"
           />
           <button
             type="button"
             disabled={disabled || !urlInput.trim()}
             onClick={handleAddUrl}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-[#1e1e28] hover:bg-[#282834] border border-[#383848] text-zinc-200 rounded transition-colors disabled:opacity-40"
+            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#c9d1d9] rounded-md transition-colors disabled:opacity-40"
           >
             <Plus className="w-3.5 h-3.5" />
             Add
@@ -175,14 +175,14 @@ export const AssetInputPanel: React.FC<AssetInputPanelProps> = ({
             {config.youtubeUrls.map((url, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between px-2.5 py-1.5 bg-[#181820] border border-[#272734] rounded text-[11px] text-zinc-300 font-mono"
+                className="flex items-center justify-between px-2.5 py-1.5 bg-[#0d1117] border border-[#21262d] rounded-md text-[11px] text-[#c9d1d9] font-mono"
               >
                 <span className="truncate max-w-[420px]">{url}</span>
                 <button
                   type="button"
                   disabled={disabled}
                   onClick={() => handleRemoveUrl(index)}
-                  className="p-1 text-zinc-500 hover:text-rose-400 transition-colors"
+                  className="p-1 text-[#6e7681] hover:text-[#f85149] transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -193,16 +193,16 @@ export const AssetInputPanel: React.FC<AssetInputPanelProps> = ({
       </div>
 
       {/* Optional Custom Images Directory */}
-      <div className="flex items-center justify-between pt-2 border-t border-[#202028]">
+      <div className="flex items-center justify-between pt-2 border-t border-[#21262d]">
         <div className="flex items-center gap-2">
-          <Image className="w-3.5 h-3.5 text-zinc-400" />
-          <span className="text-[11px] font-mono text-zinc-400">Custom Images Folder (Optional)</span>
+          <Image className="w-3.5 h-3.5 text-[#8b949e]" />
+          <span className="text-[11px] font-mono text-[#8b949e]">Custom Images Folder (Optional)</span>
         </div>
         <button
           type="button"
           disabled={disabled}
           onClick={onPickImagesDir}
-          className="px-2.5 py-1 text-[11px] font-mono bg-[#181820] hover:bg-[#22222c] border border-[#2c2c38] text-zinc-300 rounded transition-colors disabled:opacity-50"
+          className="px-2.5 py-1 text-[11px] font-mono bg-[#0d1117] hover:bg-[#21262d] border border-[#30363d] text-[#c9d1d9] rounded-md transition-colors disabled:opacity-50"
         >
           {config.imagesDir ? getFileName(config.imagesDir) : 'Select folder...'}
         </button>

@@ -147,7 +147,7 @@ export const App: React.FC = () => {
   const canProcess = Boolean(config.voicePath && config.scriptPath && config.outputDir);
 
   return (
-    <div className="min-h-screen bg-[#0e0e10] text-zinc-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-[#0d1117] text-[#f0f6fc] flex flex-col font-sans">
       <Header
         status={status}
         onReset={handleReset}
