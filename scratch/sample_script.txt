@@ -1,0 +1,6 @@
+Chào mừng các bạn đã quay trở lại với kênh công nghệ.
+Hôm nay chúng ta sẽ cùng tìm hiểu về quy trình dựng video tự động bằng trí tuệ nhân tạo.
+Đầu tiên, hệ thống sẽ tải các video mẫu chất lượng cao từ YouTube để làm tư liệu b-roll.
+Tiếp theo, kịch bản chữ và file giọng đọc sẽ được AI căn khớp chính xác theo từng từ.
+Cuối cùng, toàn bộ timeline sẽ được xuất thành file XML để bạn có thể mở và hậu kỳ trực tiếp trong Adobe Premiere Pro.
+Chúc các bạn có những trải nghiệm tuyệt vời cùng với SyncCut.

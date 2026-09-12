@@ -284,6 +284,17 @@ fn generate_premiere_xml(
     fs::write(output_xml_path, full_xml).map_err(|e| format!("Failed to write XML: {}", e))
 }
 
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct AlignedJsonItem {
+    id: usize,
+    text: String,
+    start: f64,
+    end: f64,
+    #[serde(default)]
+    duration: f64,
+}
+
 #[tauri::command]
 async fn execute_pipeline(
     config: ProjectConfig,
@@ -297,28 +308,72 @@ async fn execute_pipeline(
     fs::create_dir_all(&sources_dir).map_err(|e| format!("Cannot create sources dir: {}", e))?;
     fs::create_dir_all(&subclips_dir).map_err(|e| format!("Cannot create subclips dir: {}", e))?;
 
-    // 2. Read Script Content
-    let script_content = fs::read_to_string(&config.script_path)
-        .map_err(|e| format!("Cannot read script file: {}", e))?;
+    // 2. Run AI Forced Alignment Engine
+    let alignment_json_path = output_root.join("ai_alignment.json");
+    
+    let python_output = Command::new("python")
+        .args([
+            "engine/aligner.py",
+            "--media", &config.voice_path,
+            "--script", &config.script_path,
+            "--output", &alignment_json_path.to_string_lossy(),
+            "--model", "medium",
+        ])
+        .output();
 
-    // Parse sentences by line or punctuation
-    let raw_sentences: Vec<String> = script_content
-        .lines()
-        .flat_map(|line| {
-            line.split(|c| c == '.' || c == '!' || c == '?' || c == '\n')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-        })
-        .collect();
-
-    if raw_sentences.is_empty() {
-        return Err("Script file is empty or has no readable sentences.".to_string());
+    let mut aligned_items: Vec<AlignedJsonItem> = Vec::new();
+    if let Ok(res) = python_output {
+        if res.status.success() && alignment_json_path.exists() {
+            if let Ok(content) = fs::read_to_string(&alignment_json_path) {
+                if let Ok(items) = serde_json::from_str::<Vec<AlignedJsonItem>>(&content) {
+                    aligned_items = items;
+                }
+            }
+        }
     }
 
-    // 3. Get Voice Total Duration
-    let total_duration = get_media_duration(&config.voice_path).unwrap_or(120.0);
+    // 3. Fallback reading script content if Python aligner produced no output
+    if aligned_items.is_empty() {
+        let script_content = fs::read_to_string(&config.script_path)
+            .map_err(|e| format!("Cannot read script file: {}", e))?;
 
-    // 4. Download YouTube Videos if present
+        let raw_sentences: Vec<String> = script_content
+            .lines()
+            .flat_map(|line| {
+                line.split(|c| c == '.' || c == '!' || c == '?' || c == '\n')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+            })
+            .collect();
+
+        if raw_sentences.is_empty() {
+            return Err("Script file is empty or has no readable sentences.".to_string());
+        }
+
+        let total_duration = get_media_duration(&config.voice_path).unwrap_or(120.0);
+        let mut cur = 0.0;
+        for (idx, s) in raw_sentences.into_iter().enumerate() {
+            let dur = (total_duration / 20.0).clamp(settings.min_scene_duration, settings.max_scene_duration);
+            let start = cur;
+            let end = (cur + dur).min(total_duration);
+            cur = end;
+            aligned_items.push(AlignedJsonItem {
+                id: idx + 1,
+                text: s,
+                start,
+                end,
+                duration: end - start,
+            });
+            if cur >= total_duration { break; }
+        }
+    }
+
+    // 4. Get Voice Total Duration
+    let total_duration = get_media_duration(&config.voice_path).unwrap_or(
+        aligned_items.last().map(|i| i.end).unwrap_or(120.0),
+    );
+
+    // 5. Download YouTube Videos if present
     let mut downloaded_videos = download_youtube_sources(&config.youtube_urls, &sources_dir);
 
     // If no youtube videos were downloaded, use the voice video itself as fallback source
@@ -326,30 +381,16 @@ async fn execute_pipeline(
         downloaded_videos.push(PathBuf::from(&config.voice_path));
     }
 
-    // 5. Build Forced Alignment Segments
+    // 6. Build Final Sentence Segments with Interleaving Assets
     let mut segments = Vec::new();
-    let mut current_time = 0.0;
+    let target_ratio = settings.video_ratio.clamp(0, 100) as usize;
 
-    for (idx, sentence) in raw_sentences.iter().enumerate() {
-        let is_last = idx == raw_sentences.len() - 1;
-        let seg_duration = if is_last {
-            (total_duration - current_time).max(1.0)
-        } else {
-            // Allocate duration proportional to word count
-            let word_count = sentence.split_whitespace().count().max(3);
-            let estimated_dur = (word_count as f64 * 0.4).clamp(
-                settings.min_scene_duration,
-                settings.max_scene_duration,
-            );
-            estimated_dur.min(total_duration - current_time)
-        };
-
-        let start_time = current_time;
-        let end_time = (current_time + seg_duration).min(total_duration);
-        current_time = end_time;
+    for (idx, item) in aligned_items.iter().enumerate() {
+        let start_time = item.start;
+        let end_time = item.end;
+        let duration = (end_time - start_time).max(0.1);
 
         // Determine Asset Type (Video vs Image) based on settings
-        let target_ratio = settings.video_ratio.clamp(0, 100) as usize;
         let asset_type = match settings.pattern.as_str() {
             "alternate" => {
                 if idx % 2 == 0 {
@@ -379,14 +420,14 @@ async fn execute_pipeline(
 
         let source_video = &downloaded_videos[idx % downloaded_videos.len()];
         let source_in = (idx as f64 * 7.5) % 60.0;
-        let source_out = source_in + (end_time - start_time);
+        let source_out = source_in + duration;
 
         segments.push(SentenceSegment {
-            id: idx + 1,
-            text: sentence.clone(),
+            id: item.id,
+            text: item.text.clone(),
             start_time,
             end_time,
-            duration: end_time - start_time,
+            duration,
             asset_type: asset_type.to_string(),
             source_media_name: source_video
                 .file_name()
@@ -397,13 +438,9 @@ async fn execute_pipeline(
             source_in,
             source_out,
         });
-
-        if current_time >= total_duration {
-            break;
-        }
     }
 
-    // 6. Generate Premiere XML (XMEML v4)
+    // 7. Generate Premiere XML (XMEML v4)
     let xml_output_path = output_root.join("SyncCut_Premiere_Project.xml");
     generate_premiere_xml(
         &segments,
