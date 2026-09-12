@@ -35,6 +35,33 @@ pub struct InterleavingSettings {
     pub fps: f64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DemoProjectData {
+    pub voice_path: String,
+    pub script_path: String,
+    pub output_dir: String,
+    pub broll_path: String,
+}
+
+#[tauri::command]
+fn load_demo_project() -> Result<DemoProjectData, String> {
+    let current_dir = std::env::current_dir().map_err(|e| e.to_string())?;
+    let demo_dir = current_dir.join("demo_assets");
+    let output_dir = current_dir.join("demo_output");
+    let _ = fs::create_dir_all(&output_dir);
+
+    let voice_p = demo_dir.join("sample_voice.mp4");
+    let script_p = demo_dir.join("sample_script.txt");
+    let broll_p = demo_dir.join("sample_broll.mp4");
+
+    Ok(DemoProjectData {
+        voice_path: voice_p.to_string_lossy().into_owned(),
+        script_path: script_p.to_string_lossy().into_owned(),
+        output_dir: output_dir.to_string_lossy().into_owned(),
+        broll_path: broll_p.to_string_lossy().into_owned(),
+    })
+}
+
 #[tauri::command]
 fn pick_file_voice() -> Option<String> {
     let dialog = rfd::FileDialog::new()
@@ -458,6 +485,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            load_demo_project,
             pick_file_voice,
             pick_file_script,
             pick_directory_output,

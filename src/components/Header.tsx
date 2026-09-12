@@ -1,14 +1,15 @@
 import React from 'react';
-import { Layers, FolderOpen, RefreshCw } from 'lucide-react';
+import { Layers, FolderOpen, RefreshCw, Sparkles } from 'lucide-react';
 
 interface HeaderProps {
   status: 'idle' | 'processing' | 'ready' | 'completed' | 'error';
   onReset: () => void;
   onOpenOutput?: () => void;
+  onLoadDemo?: () => void;
   hasOutput: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ status, onReset, onOpenOutput, hasOutput }) => {
+export const Header: React.FC<HeaderProps> = ({ status, onReset, onOpenOutput, onLoadDemo, hasOutput }) => {
   const getStatusBadge = () => {
     switch (status) {
       case 'processing':
@@ -59,6 +60,16 @@ export const Header: React.FC<HeaderProps> = ({ status, onReset, onOpenOutput, h
 
       <div className="flex items-center gap-3">
         {getStatusBadge()}
+
+        {onLoadDemo && (
+          <button
+            onClick={onLoadDemo}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#f0f6fc] bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] rounded-md transition-colors"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-[#e3b341]" />
+            Load Demo
+          </button>
+        )}
 
         {hasOutput && onOpenOutput && (
           <button

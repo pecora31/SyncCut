@@ -91,6 +91,25 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleLoadDemo = async () => {
+    try {
+      const demo = await invoke<{ voice_path: string; script_path: string; output_dir: string; broll_path: string }>('load_demo_project');
+      if (demo) {
+        setConfig({
+          voicePath: demo.voice_path,
+          scriptPath: demo.script_path,
+          outputDir: demo.output_dir,
+          youtubeUrls: [],
+          imagesDir: '',
+        });
+        addLog('completed', 'Loaded demo project assets! Click "Align, Slice & Export" to run.');
+      }
+    } catch (e) {
+      console.warn('Failed to load demo:', e);
+      addLog('error', `Failed to load demo: ${e}`);
+    }
+  };
+
   const handleToggleAssetType = (id: number) => {
     setSegments((prev) =>
       prev.map((seg) =>
@@ -152,6 +171,7 @@ export const App: React.FC = () => {
         status={status}
         onReset={handleReset}
         onOpenOutput={handleOpenFolder}
+        onLoadDemo={handleLoadDemo}
         hasOutput={Boolean(config.outputDir && status === 'completed')}
       />
 

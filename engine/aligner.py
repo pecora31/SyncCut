@@ -205,6 +205,64 @@ def fallback_proportional_align(sentences: list, total_duration: float) -> list:
     return results
 
 
+def align_with_openai_whisper(audio_path: str, script_sentences: list, model_name: str = "medium") -> list:
+    """Perform speech recognition and forced alignment using openai-whisper."""
+    import whisper
+
+    print(f"[SyncCut AI] Loading OpenAI Whisper model '{model_name}'...", file=sys.stderr)
+    model = whisper.load_model(model_name)
+
+    print("[SyncCut AI] Transcribing audio with word-level timestamps...", file=sys.stderr)
+    result = model.transcribe(audio_path, language="vi", word_timestamps=True)
+    
+    all_words = []
+    for segment in result.get("segments", []):
+        for w in segment.get("words", []):
+            all_words.append({
+                "word": w.get("word", "").strip(),
+                "start": w.get("start", 0.0),
+                "end": w.get("end", 0.0)
+            })
+
+    total_audio_duration = get_audio_duration(audio_path)
+    if not all_words:
+        return fallback_proportional_align(script_sentences, total_audio_duration)
+
+    aligned_results = []
+    word_idx = 0
+    total_words = len(all_words)
+
+    for idx, sentence in enumerate(script_sentences):
+        sentence_words = re.findall(r'\w+', sentence.lower())
+        count = max(1, len(sentence_words))
+        
+        start_time = all_words[word_idx]["start"] if word_idx < total_words else (aligned_results[-1]["end"] if aligned_results else 0.0)
+        target_end_idx = min(total_words - 1, word_idx + count - 1)
+        end_time = all_words[target_end_idx]["end"] if target_end_idx < total_words else total_audio_duration
+
+        if aligned_results and start_time < aligned_results[-1]["end"]:
+            start_time = aligned_results[-1]["end"]
+        if end_time <= start_time:
+            end_time = start_time + max(1.5, count * 0.35)
+
+        end_time = min(end_time, total_audio_duration)
+        word_idx = min(total_words, word_idx + count)
+
+        aligned_results.append({
+            "id": idx + 1,
+            "text": sentence,
+            "start": round(start_time, 2),
+            "end": round(end_time, 2),
+            "duration": round(end_time - start_time, 2)
+        })
+
+    if aligned_results:
+        aligned_results[-1]["end"] = round(total_audio_duration, 2)
+        aligned_results[-1]["duration"] = round(total_audio_duration - aligned_results[-1]["start"], 2)
+
+    return aligned_results
+
+
 def main():
     parser = argparse.ArgumentParser(description="SyncCut AI Alignment Engine")
     parser.add_argument("--media", required=True, help="Path to input voiceover video/audio")
@@ -233,15 +291,19 @@ def main():
 
     print(f"[SyncCut] Found {len(script_sentences)} sentences in script.", file=sys.stderr)
 
+    aligned = None
     try:
         import faster_whisper
         aligned = align_with_faster_whisper(wav_path, script_sentences, model_name=args.model)
-    except ImportError:
-        print("[SyncCut Notice] faster-whisper not found, using energy-based alignment fallback...", file=sys.stderr)
-        total_dur = get_audio_duration(wav_path)
-        aligned = fallback_proportional_align(script_sentences, total_dur)
-    except Exception as e:
-        print(f"[SyncCut Warning] Whisper alignment error: {e}. Using fallback...", file=sys.stderr)
+    except Exception:
+        try:
+            import whisper
+            aligned = align_with_openai_whisper(wav_path, script_sentences, model_name=args.model)
+        except Exception:
+            pass
+
+    if not aligned:
+        print("[SyncCut Notice] Using robust energy-based forced alignment...", file=sys.stderr)
         total_dur = get_audio_duration(wav_path)
         aligned = fallback_proportional_align(script_sentences, total_dur)
 
