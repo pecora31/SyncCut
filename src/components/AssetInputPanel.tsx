@@ -157,6 +157,7 @@ export const AssetInputPanel: React.FC<AssetInputPanelProps> = ({
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAddUrl()}
+            onBlur={handleAddUrl}
             className="flex-1 px-3 py-1.5 text-xs bg-[#0d1117] border border-[#30363d] focus:border-[#58a6ff] rounded-md text-[#f0f6fc] placeholder-[#6e7681] outline-none transition-colors disabled:opacity-50"
           />
           <button

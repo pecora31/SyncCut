@@ -93,12 +93,12 @@ export const App: React.FC = () => {
 
   const handleLoadDemo = async () => {
     try {
-      const demo = await invoke<{ voice_path: string; script_path: string; output_dir: string; broll_path: string }>('load_demo_project');
+      const demo = await invoke<{ voicePath: string; scriptPath: string; outputDir: string; brollPath: string }>('load_demo_project');
       if (demo) {
         setConfig({
-          voicePath: demo.voice_path,
-          scriptPath: demo.script_path,
-          outputDir: demo.output_dir,
+          voicePath: demo.voicePath,
+          scriptPath: demo.scriptPath,
+          outputDir: demo.outputDir,
           youtubeUrls: [],
           imagesDir: '',
         });

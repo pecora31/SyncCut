@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectConfig {
     pub voice_path: String,
     pub script_path: String,
@@ -13,6 +14,7 @@ pub struct ProjectConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SentenceSegment {
     pub id: usize,
     pub text: String,
@@ -27,6 +29,7 @@ pub struct SentenceSegment {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InterleavingSettings {
     pub video_ratio: i32, // 0 to 100
     pub pattern: String,  // "alternate", "ratio", "random"
@@ -36,6 +39,7 @@ pub struct InterleavingSettings {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DemoProjectData {
     pub voice_path: String,
     pub script_path: String,
