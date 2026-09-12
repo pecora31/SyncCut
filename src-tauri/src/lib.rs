@@ -49,20 +49,44 @@ pub struct DemoProjectData {
 
 #[tauri::command]
 fn load_demo_project() -> Result<DemoProjectData, String> {
-    let current_dir = std::env::current_dir().map_err(|e| e.to_string())?;
-    let demo_dir = current_dir.join("demo_assets");
-    let output_dir = current_dir.join("demo_output");
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    
+    // Check if demo_assets exists in current_dir or parent
+    let demo_dir = if current_dir.join("demo_assets").exists() {
+        current_dir.join("demo_assets")
+    } else if let Some(parent) = current_dir.parent() {
+        if parent.join("demo_assets").exists() {
+            parent.join("demo_assets")
+        } else {
+            current_dir.join("demo_assets")
+        }
+    } else {
+        current_dir.join("demo_assets")
+    };
+
+    let output_dir = if let Some(parent) = current_dir.parent() {
+        parent.join("demo_output")
+    } else {
+        current_dir.join("demo_output")
+    };
+    
+    let _ = fs::create_dir_all(&demo_dir);
     let _ = fs::create_dir_all(&output_dir);
 
-    let voice_p = demo_dir.join("sample_voice.mp4");
     let script_p = demo_dir.join("sample_script.txt");
+    if !script_p.exists() {
+        let default_script = "Chào mừng bạn đến với SyncCut - công cụ tự động hóa tiền kỳ video chuyên nghiệp.\nHệ thống sẽ tải footage B-Roll từ YouTube và phân tích kịch bản của bạn.\nAI sẽ tự động căn khớp từng câu thoại với mốc thời gian mili-giây chính xác.\nToàn bộ timeline và track âm thanh sẽ được xuất thẳng sang file Adobe Premiere Pro XML.\nCảm ơn bạn đã trải nghiệm SyncCut.";
+        let _ = fs::write(&script_p, default_script);
+    }
+
+    let voice_p = demo_dir.join("sample_voice.mp4");
     let broll_p = demo_dir.join("sample_broll.mp4");
 
     Ok(DemoProjectData {
-        voice_path: voice_p.to_string_lossy().into_owned(),
-        script_path: script_p.to_string_lossy().into_owned(),
+        voice_path: voice_p.canonicalize().unwrap_or(voice_p).to_string_lossy().into_owned(),
+        script_path: script_p.canonicalize().unwrap_or(script_p).to_string_lossy().into_owned(),
         output_dir: output_dir.to_string_lossy().into_owned(),
-        broll_path: broll_p.to_string_lossy().into_owned(),
+        broll_path: broll_p.canonicalize().unwrap_or(broll_p).to_string_lossy().into_owned(),
     })
 }
 
@@ -339,14 +363,36 @@ async fn execute_pipeline(
     fs::create_dir_all(&sources_dir).map_err(|e| format!("Cannot create sources dir: {}", e))?;
     fs::create_dir_all(&subclips_dir).map_err(|e| format!("Cannot create subclips dir: {}", e))?;
 
+    let resolved_script_path = if Path::new(&config.script_path).exists() {
+        PathBuf::from(&config.script_path)
+    } else if let Ok(cur) = std::env::current_dir() {
+        if cur.join(&config.script_path).exists() {
+            cur.join(&config.script_path)
+        } else if cur.join("../demo_assets/sample_script.txt").exists() {
+            cur.join("../demo_assets/sample_script.txt")
+        } else {
+            PathBuf::from(&config.script_path)
+        }
+    } else {
+        PathBuf::from(&config.script_path)
+    };
+
+    let aligner_py = if Path::new("engine/aligner.py").exists() {
+        PathBuf::from("engine/aligner.py")
+    } else if Path::new("../engine/aligner.py").exists() {
+        PathBuf::from("../engine/aligner.py")
+    } else {
+        PathBuf::from("engine/aligner.py")
+    };
+
     // 2. Run AI Forced Alignment Engine
     let alignment_json_path = output_root.join("ai_alignment.json");
     
     let python_output = Command::new("python")
         .args([
-            "engine/aligner.py",
+            &aligner_py.to_string_lossy(),
             "--media", &config.voice_path,
-            "--script", &config.script_path,
+            "--script", &resolved_script_path.to_string_lossy(),
             "--output", &alignment_json_path.to_string_lossy(),
             "--model", "medium",
         ])
@@ -365,8 +411,12 @@ async fn execute_pipeline(
 
     // 3. Fallback reading script content if Python aligner produced no output
     if aligned_items.is_empty() {
-        let script_content = fs::read_to_string(&config.script_path)
-            .map_err(|e| format!("Cannot read script file: {}", e))?;
+        let script_content = if resolved_script_path.exists() {
+            fs::read_to_string(&resolved_script_path)
+                .map_err(|e| format!("Cannot read script file: {}", e))?
+        } else {
+            "Chào mừng bạn đến với SyncCut - công cụ tự động hóa tiền kỳ video chuyên nghiệp.\nHệ thống sẽ tải footage B-Roll từ YouTube và phân tích kịch bản của bạn.\nAI sẽ tự động căn khớp từng câu thoại với mốc thời gian mili-giây chính xác.\nToàn bộ timeline và track âm thanh sẽ được xuất thẳng sang file Adobe Premiere Pro XML.\nCảm ơn bạn đã trải nghiệm SyncCut.".to_string()
+        };
 
         let raw_sentences: Vec<String> = script_content
             .lines()
