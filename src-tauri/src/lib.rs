@@ -534,6 +534,93 @@ async fn execute_pipeline(
     Ok(segments)
 }
 
+#[tauri::command]
+async fn render_preview_video(
+    config: ProjectConfig,
+    segments: Vec<SentenceSegment>,
+) -> Result<String, String> {
+    let output_root = PathBuf::from(&config.output_dir);
+    let temp_subclips_dir = output_root.join("subclips");
+    let _ = fs::create_dir_all(&temp_subclips_dir);
+
+    let concat_txt_path = output_root.join("concat_list.txt");
+    let mut concat_content = String::new();
+
+    for (idx, seg) in segments.iter().enumerate() {
+        let subclip_path = temp_subclips_dir.join(format!("subclip_{:03}.mp4", idx + 1));
+        
+        let _ = Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-ss", &format!("{:.2}", seg.source_in),
+                "-t", &format!("{:.2}", seg.duration),
+                "-i", &seg.source_media_path,
+                "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+                "-r", "30",
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-an",
+                &subclip_path.to_string_lossy(),
+            ])
+            .output();
+
+        let norm_path = subclip_path.to_string_lossy().replace('\\', "/");
+        concat_content.push_str(&format!("file '{}'\n", norm_path));
+    }
+
+    let _ = fs::write(&concat_txt_path, &concat_content);
+
+    // Concat with voiceover audio
+    let output_mp4 = output_root.join("SyncCut_Rendered_Preview.mp4");
+    
+    let res = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", &concat_txt_path.to_string_lossy(),
+            "-i", &config.voice_path,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-shortest",
+            &output_mp4.to_string_lossy(),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to render video with ffmpeg: {}", e))?;
+
+    if res.status.success() && output_mp4.exists() {
+        Ok(output_mp4.to_string_lossy().into_owned())
+    } else {
+        Err(String::from_utf8_lossy(&res.stderr).into_owned())
+    }
+}
+
+#[tauri::command]
+fn open_file(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open file: {}", e))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open file: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open file: {}", e))?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -545,7 +632,9 @@ pub fn run() {
             pick_directory_output,
             pick_directory_images,
             open_directory,
-            execute_pipeline
+            open_file,
+            execute_pipeline,
+            render_preview_video
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

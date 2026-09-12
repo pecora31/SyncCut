@@ -1,11 +1,13 @@
 import React from 'react';
-import { Play, Loader2, FolderOpen, Terminal } from 'lucide-react';
+import { Play, Loader2, FolderOpen, Terminal, Film } from 'lucide-react';
 import { ProcessingLog } from '../types';
 
 interface ExportPanelProps {
   onProcessAndExport: () => void;
   onOpenFolder?: () => void;
+  onRenderVideo?: () => void;
   isProcessing: boolean;
+  isRendering?: boolean;
   canProcess: boolean;
   logs: ProcessingLog[];
   status: 'idle' | 'processing' | 'ready' | 'completed' | 'error';
@@ -14,7 +16,9 @@ interface ExportPanelProps {
 export const ExportPanel: React.FC<ExportPanelProps> = ({
   onProcessAndExport,
   onOpenFolder,
+  onRenderVideo,
   isProcessing,
+  isRendering,
   canProcess,
   logs,
   status,
@@ -29,12 +33,12 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button
           type="button"
           disabled={!canProcess || isProcessing}
           onClick={onProcessAndExport}
-          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-[#238636] hover:bg-[#2ea043] disabled:bg-[#21262d] disabled:text-[#6e7681] text-white text-xs font-sans font-semibold rounded-md border border-[rgba(240,246,252,0.1)] transition-all shadow-sm"
+          className="flex-1 min-w-[240px] flex items-center justify-center gap-2 py-2.5 px-4 bg-[#238636] hover:bg-[#2ea043] disabled:bg-[#21262d] disabled:text-[#6e7681] text-white text-xs font-sans font-semibold rounded-md border border-[rgba(240,246,252,0.1)] transition-all shadow-sm"
         >
           {isProcessing ? (
             <>
@@ -48,6 +52,27 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
             </>
           )}
         </button>
+
+        {status === 'completed' && onRenderVideo && (
+          <button
+            type="button"
+            disabled={isRendering}
+            onClick={onRenderVideo}
+            className="flex items-center gap-2 py-2.5 px-4 bg-[#1f242c] hover:bg-[#27303c] border border-[#58a6ff]/50 text-[#58a6ff] text-xs font-sans font-semibold rounded-md transition-colors"
+          >
+            {isRendering ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Rendering MP4...</span>
+              </>
+            ) : (
+              <>
+                <Film className="w-4 h-4 text-[#58a6ff]" />
+                <span>🎬 Render & Watch MP4</span>
+              </>
+            )}
+          </button>
+        )}
 
         {status === 'completed' && onOpenFolder && (
           <button

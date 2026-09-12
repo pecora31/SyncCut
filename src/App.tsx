@@ -135,6 +135,29 @@ export const App: React.FC = () => {
     }
   };
 
+  const [isRendering, setIsRendering] = useState(false);
+
+  const handleRenderVideo = async () => {
+    if (segments.length === 0 || !config.outputDir) return;
+    setIsRendering(true);
+    addLog('downloading', 'Rendering preview video with FFmpeg (slicing & merging)...');
+
+    try {
+      const renderedPath = await invoke<string>('render_preview_video', {
+        config,
+        segments,
+      });
+      addLog('completed', `Rendered video ready: ${renderedPath}`);
+      // Open the rendered video in the default Windows player
+      await invoke('open_file', { path: renderedPath });
+    } catch (e: any) {
+      console.error('Render error:', e);
+      addLog('error', `Render failed: ${e?.toString() || 'FFmpeg error'}`);
+    } finally {
+      setIsRendering(false);
+    }
+  };
+
   const handleProcessAndExport = async () => {
     if (!config.voicePath || !config.scriptPath || !config.outputDir) {
       addLog('error', 'Please provide Voice MP4, Script TXT, and Output Directory before starting!');
@@ -206,7 +229,9 @@ export const App: React.FC = () => {
           <ExportPanel
             onProcessAndExport={handleProcessAndExport}
             onOpenFolder={handleOpenFolder}
+            onRenderVideo={handleRenderVideo}
             isProcessing={status === 'processing'}
+            isRendering={isRendering}
             canProcess={canProcess}
             logs={logs}
             status={status}
