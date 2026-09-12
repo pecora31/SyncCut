@@ -2,7 +2,7 @@
 
 @layer base {
   :root {
-    /* GitHub Dark Theme Palette */
+    /* Modern GitHub Dark Theme Palette */
     --color-canvas-default: #0d1117;
     --color-canvas-subtle: #161b22;
     --color-canvas-overlay: #1c2128;
@@ -27,7 +27,8 @@
   body {
     background-color: var(--color-canvas-default);
     color: var(--color-fg-default);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    letter-spacing: -0.01em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     user-select: none;
@@ -35,10 +36,10 @@
   }
 
   code, pre, .font-mono {
-    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace !important;
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
   }
 
-  /* GitHub Dark Scrollbar */
+  /* Sleek GitHub Dark Scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -48,7 +49,7 @@
   }
   ::-webkit-scrollbar-thumb {
     background: #30363d;
-    border-radius: 3px;
+    border-radius: 4px;
   }
   ::-webkit-scrollbar-thumb:hover {
     background: #484f58;

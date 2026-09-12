@@ -59,9 +59,9 @@ export const PacingControls: React.FC<PacingControlsProps> = ({ settings, onChan
         <label className="text-[11px] font-mono text-[#8b949e]">Interleaving Pattern</label>
         <div className="grid grid-cols-3 gap-2">
           {[
-            { id: 'ratio', label: 'Weighted Ratio', desc: 'Theo tỉ lệ %' },
-            { id: 'alternate', label: 'Strict Alternate', desc: '1 Video - 1 Ảnh' },
-            { id: 'random', label: 'Random Mix', desc: 'Ngẫu nhiên' },
+            { id: 'ratio', label: 'Weighted Ratio', desc: 'Ratio-based' },
+            { id: 'alternate', label: 'Strict Alternate', desc: '1 Video - 1 Image' },
+            { id: 'random', label: 'Random Mix', desc: 'Randomized' },
           ].map((mode) => (
             <button
               key={mode.id}
