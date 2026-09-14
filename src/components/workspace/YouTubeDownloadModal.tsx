@@ -38,8 +38,16 @@ interface YouTubeDownloadModalProps {
   onMediaDownloaded: (asset: MediaAsset) => void;
 }
 
+function cleanYouTubeUrl(raw: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim().replace(/^["'<(\[]+|[>"')\]]+$/g, '');
+  const urlMatch = trimmed.match(/https?:\/\/[^\s"'>]+/i);
+  return (urlMatch ? urlMatch[0] : trimmed).trim();
+}
+
 function isYouTubeUrl(val: string): boolean {
-  return /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/i.test(val.trim());
+  const clean = cleanYouTubeUrl(val);
+  return /(?:https?:\/\/)?(?:[a-zA-Z0-9-]+\.)?(?:youtube\.com|youtu\.be)\/.+/i.test(clean);
 }
 
 export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
@@ -86,29 +94,9 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
     };
   }, []);
 
-  const handleUrlChange = (newVal: string) => {
-    setUrl(newVal);
-    const trimmed = newVal.trim();
-    if (!trimmed) {
-      setMetadata(null);
-      setFetchError(null);
-      setDownloadError(null);
-      setDownloadProgress(null);
-      return;
-    }
-
-    // Clear old metadata if URL is changed
-    if (metadata && !trimmed.includes(metadata.id)) {
-      setMetadata(null);
-      setFetchError(null);
-      setDownloadError(null);
-      setDownloadProgress(null);
-    }
-  };
-
   const fetchMetadataForUrl = async (targetUrl: string) => {
-    const trimmed = targetUrl.trim();
-    if (!trimmed) {
+    const cleaned = cleanYouTubeUrl(targetUrl);
+    if (!cleaned) {
       setMetadata(null);
       return;
     }
@@ -120,7 +108,7 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
     setDownloadProgress(null);
 
     try {
-      const data = await invoke<YouTubeMetadata>('fetch_youtube_metadata', { url: trimmed });
+      const data = await invoke<YouTubeMetadata>('fetch_youtube_metadata', { url: cleaned });
       setMetadata(data);
       if (data.availableVideoQualities && data.availableVideoQualities.length > 0) {
         setDownloadVideoHeight(data.availableVideoQualities[0].height);
@@ -136,20 +124,57 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
     }
   };
 
-  // Debounce auto-fetch when entering or pasting a valid YouTube link
+  const handleUrlChange = (newVal: string) => {
+    setUrl(newVal);
+    const cleaned = cleanYouTubeUrl(newVal);
+    if (!cleaned) {
+      setMetadata(null);
+      setFetchError(null);
+      setDownloadError(null);
+      setDownloadProgress(null);
+      return;
+    }
+
+    // Clear old metadata if URL is changed to a different video
+    if (metadata && !cleaned.includes(metadata.id)) {
+      setMetadata(null);
+      setFetchError(null);
+      setDownloadError(null);
+      setDownloadProgress(null);
+    }
+  };
+
+  // Instant auto-fetch when pasting a YouTube link
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pastedText = e.clipboardData.getData('text');
+    const cleaned = cleanYouTubeUrl(pastedText);
+    if (cleaned) {
+      e.preventDefault();
+      setUrl(cleaned);
+      setMetadata(null);
+      setFetchError(null);
+      setDownloadError(null);
+      setDownloadProgress(null);
+      if (isYouTubeUrl(cleaned)) {
+        fetchMetadataForUrl(cleaned);
+      }
+    }
+  };
+
+  // Debounce auto-fetch when typing or autofilling a valid YouTube link
   useEffect(() => {
-    const trimmed = url.trim();
-    if (!trimmed) {
+    const cleaned = cleanYouTubeUrl(url);
+    if (!cleaned) {
       setMetadata(null);
       setFetchError(null);
       setDownloadError(null);
       return;
     }
 
-    if (isYouTubeUrl(trimmed) && (!metadata || !trimmed.includes(metadata.id))) {
+    if (isYouTubeUrl(cleaned) && (!metadata || !cleaned.includes(metadata.id)) && !isFetching) {
       const timer = setTimeout(() => {
-        fetchMetadataForUrl(trimmed);
-      }, 400);
+        fetchMetadataForUrl(cleaned);
+      }, 250);
       return () => clearTimeout(timer);
     }
   }, [url]);
@@ -237,9 +262,11 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
           <div className="flex gap-2">
             <input
               type="text"
+              autoFocus
               placeholder="Paste YouTube URL (https://...)"
               value={url}
               onChange={(e) => handleUrlChange(e.target.value)}
+              onPaste={handlePaste}
               onKeyDown={(e) => e.key === 'Enter' && fetchMetadataForUrl(url)}
               className="flex-1 px-3 py-2 bg-[#141414] border border-[#383838] focus:border-[#666666] rounded text-[#e6e6e6] text-xs outline-none font-mono"
             />
@@ -247,9 +274,9 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
               type="button"
               disabled={isFetching || !url.trim()}
               onClick={() => fetchMetadataForUrl(url)}
-              className="px-4 py-2 bg-[#2a2a2a] hover:bg-[#383838] disabled:bg-[#1c1c1c] disabled:text-[#555555] text-white border border-[#444444] font-medium text-xs rounded transition-colors cursor-pointer shrink-0"
+              className="px-4 py-2 bg-[#2a2a2a] hover:bg-[#383838] disabled:bg-[#1c1c1c] disabled:text-[#555555] text-white border border-[#444444] font-medium text-xs rounded transition-colors cursor-pointer shrink-0 font-mono"
             >
-              {isFetching ? 'Getting video...' : 'Get'}
+              {isFetching ? 'Getting video...' : metadata ? 'Ready' : 'Get'}
             </button>
           </div>
 
@@ -394,7 +421,7 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
         {/* Download Action Button with integrated thin bottom progress bar */}
         <button
           type="button"
-          disabled={isDownloading || !metadata}
+          disabled={isDownloading || !metadata || isFetching}
           onClick={handleStartDownload}
           className="w-full relative overflow-hidden py-2.5 px-3 bg-[#2d2d2d] hover:bg-[#3a3a3a] disabled:bg-[#181818] disabled:text-[#555555] text-white font-medium text-xs rounded border border-[#444444] transition-colors cursor-pointer"
         >
@@ -403,7 +430,11 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
             <span>
               {isDownloading
                 ? `Downloading ${downloadProgress?.percent ? downloadProgress.percent.toFixed(0) : 0}%`
-                : 'Download & Add to Media Pool'}
+                : isFetching
+                  ? 'Getting video details...'
+                  : metadata
+                    ? 'Download & Add to Media Pool'
+                    : 'Paste YouTube link to download'}
             </span>
 
             {isDownloading && downloadProgress && (
