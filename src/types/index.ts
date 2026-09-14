@@ -17,6 +17,16 @@ export interface SentenceSegment {
   sourceMediaPath: string;
   sourceIn: number;
   sourceOut: number;
+  matchConfidence?: number;
+}
+
+export interface MediaAsset {
+  id: string;
+  name: string;
+  path: string;
+  fileType: 'voice' | 'script' | 'video' | 'image';
+  sizeBytes: number;
+  duration?: number;
 }
 
 export interface InterleavingSettings {

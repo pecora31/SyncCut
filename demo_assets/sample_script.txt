@@ -1,5 +1,0 @@
-Chào mừng bạn đến với SyncCut - công cụ tự động hóa tiền kỳ video chuyên nghiệp.
-Hệ thống sẽ tải footage B-Roll từ YouTube và phân tích kịch bản của bạn.
-AI sẽ tự động căn khớp từng câu thoại với mốc thời gian mili-giây chính xác.
-Toàn bộ timeline và track âm thanh sẽ được xuất thẳng sang file Adobe Premiere Pro XML.
-Cảm ơn bạn đã trải nghiệm SyncCut.

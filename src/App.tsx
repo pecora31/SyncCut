@@ -1,36 +1,109 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Header } from './components/Header';
-import { ProjectBin } from './components/ProjectBin';
-import { ProgramMonitor } from './components/ProgramMonitor';
-import { TimelineTrackView } from './components/TimelineTrackView';
-import { ProjectConfig, SentenceSegment, InterleavingSettings, ProcessingLog } from './types';
 import { invoke } from '@tauri-apps/api/core';
-import { Terminal, ChevronUp, ChevronDown } from 'lucide-react';
+import { safeConvertFileSrc } from './utils/mediaUtils';
+import { SentenceSegment, MediaAsset } from './types';
+import { MediaPoolTab } from './components/workspace/MediaPoolTab';
+import { AIMatcherTab } from './components/workspace/AIMatcherTab';
+import { YouTubeDownloadModal } from './components/workspace/YouTubeDownloadModal';
+import { SettingsModal } from './components/modals/SettingsModal';
+import { UpdateModal } from './components/modals/UpdateModal';
+import { FirstRunSetupModal } from './components/modals/FirstRunSetupModal';
+import { ProgramMonitor } from './components/ProgramMonitor';
+import { AIPipelineDock, isVideoAsset } from './components/AIPipelineDock';
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
+import { useLanguage } from './i18n';
 
-const STORAGE_KEY_CONFIG = 'synccut_project_config';
-const STORAGE_KEY_SETTINGS = 'synccut_interleaving_settings';
+const STORAGE_KEY_ASSETS = 'synccut_media_assets';
+const STORAGE_KEY_VOICE = 'synccut_active_voice';
+const STORAGE_KEY_SCRIPT = 'synccut_active_script';
+const STORAGE_KEY_OUTPUT_DIR = 'synccut_output_dir';
+const STORAGE_KEY_FIRST_RUN = 'synccut_media_pool_configured';
 const STORAGE_KEY_SEGMENTS = 'synccut_aligned_segments';
+const STORAGE_KEY_LEFT_WIDTH = 'synccut_panel_left_width';
+
+export function normalizeAssetPath(filePath?: string | null): string {
+  if (!filePath || typeof filePath !== 'string') return '';
+  let clean = filePath.replace(/\\/g, '/').trim();
+  if (clean.startsWith('//?/')) clean = clean.slice(4);
+  return clean;
+}
+
+export function cleanDeduplicateAssets(items: MediaAsset[]): MediaAsset[] {
+  const seenNames = new Set<string>();
+  const result: MediaAsset[] = [];
+  for (const item of items) {
+    const normName = item.name.toLowerCase().trim();
+    if (normName.startsWith('sample_')) continue;
+    if (!seenNames.has(normName)) {
+      seenNames.add(normName);
+      result.push({
+        ...item,
+        path: normalizeAssetPath(item.path),
+      });
+    }
+  }
+  return result;
+}
+
+interface DeletedAssetEntry {
+  assets: MediaAsset[];
+  wasVoicePath?: string;
+  wasScriptPath?: string;
+  wasFootagePath?: string;
+}
 
 export const App: React.FC = () => {
-  const [status, setStatus] = useState<'idle' | 'processing' | 'ready' | 'completed' | 'error'>('idle');
-  
-  // State with LocalStorage persistence to prevent refresh reset
-  const [config, setConfig] = useState<ProjectConfig>(() => {
+  // Workspace Tab: 'pool' (Media Pool) or 'matcher' (AI Storyboard Matcher)
+  const [workspaceTab, setWorkspaceTab] = useState<'pool' | 'matcher'>('pool');
+  const [isYouTubePopupOpen, setIsYouTubePopupOpen] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isUpdateOpen, setIsUpdateOpen] = useState<boolean>(false);
+  const [isFirstRunOpen, setIsFirstRunOpen] = useState<boolean>(() => {
+    return localStorage.getItem(STORAGE_KEY_FIRST_RUN) !== 'true';
+  });
+
+  const handleConfirmFirstRun = (folder: string) => {
+    setOutputDir(folder);
+    localStorage.setItem(STORAGE_KEY_OUTPUT_DIR, folder);
+    localStorage.setItem(STORAGE_KEY_FIRST_RUN, 'true');
+    setIsFirstRunOpen(false);
+  };
+
+  // Resizable Panel Dimensions (Left Workspace vs Right Preview)
+  const [leftWidth, setLeftWidth] = useState<number>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_CONFIG);
-      return saved ? JSON.parse(saved) : { voicePath: '', scriptPath: '', outputDir: '', youtubeUrls: [], imagesDir: '' };
+      const saved = localStorage.getItem(STORAGE_KEY_LEFT_WIDTH);
+      return saved ? parseInt(saved, 10) : 460;
     } catch {
-      return { voicePath: '', scriptPath: '', outputDir: '', youtubeUrls: [], imagesDir: '' };
+      return 460;
     }
   });
 
-  const [settings, setSettings] = useState<InterleavingSettings>(() => {
+  // Core Project State with strict deduplication on load
+  const [assets, setAssets] = useState<MediaAsset[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_SETTINGS);
-      return saved ? JSON.parse(saved) : { videoRatio: 70, pattern: 'ratio', minSceneDuration: 2.5, maxSceneDuration: 6.0, fps: 30 };
+      const saved = localStorage.getItem(STORAGE_KEY_ASSETS);
+      const parsed: MediaAsset[] = saved ? JSON.parse(saved) : [];
+      return cleanDeduplicateAssets(parsed);
     } catch {
-      return { videoRatio: 70, pattern: 'ratio', minSceneDuration: 2.5, maxSceneDuration: 6.0, fps: 30 };
+      return [];
     }
+  });
+
+  const [activeVoicePath, setActiveVoicePath] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_VOICE) || '';
+    if (saved.toLowerCase().includes('sample_voice')) return '';
+    return saved;
+  });
+
+  const [activeScriptPath, setActiveScriptPath] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_SCRIPT) || '';
+    if (saved.toLowerCase().includes('sample_script')) return '';
+    return saved;
+  });
+
+  const [outputDir, setOutputDir] = useState<string>(() => {
+    return localStorage.getItem(STORAGE_KEY_OUTPUT_DIR) || 'media_pool';
   });
 
   const [segments, setSegments] = useState<SentenceSegment[]>(() => {
@@ -42,318 +115,764 @@ export const App: React.FC = () => {
     }
   });
 
-  const [logs, setLogs] = useState<ProcessingLog[]>([]);
-  const [isLogOpen, setIsLogOpen] = useState(false);
+  // Export & Notification State
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
 
-  // Playback & Timeline Scrubber State
-  const [currentTime, setCurrentTime] = useState<number>(0);
+  // Playback & Preview State
+  const [currentPlaybackTime, setCurrentPlaybackTime] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [isRendering, setIsRendering] = useState<boolean>(false);
-  const playbackIntervalRef = useRef<any>(null);
+  const [previewAsset, setPreviewAsset] = useState<MediaAsset | null>(null);
+  const [activeFootagePath, setActiveFootagePath] = useState<string>('');
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const currentPlaybackTimeRef = useRef<number>(0);
+  currentPlaybackTimeRef.current = currentPlaybackTime;
 
-  // Calculate total timeline duration
-  const totalDuration = segments.length > 0 ? segments[segments.length - 1].endTime : 15.0;
+  // Undo Stack for Deleted Assets
+  const deletedHistoryRef = useRef<DeletedAssetEntry[]>([]);
+  const activeVoicePathRef = useRef(activeVoicePath);
+  activeVoicePathRef.current = activeVoicePath;
+  const activeScriptPathRef = useRef(activeScriptPath);
+  activeScriptPathRef.current = activeScriptPath;
+  const activeFootagePathRef = useRef(activeFootagePath);
+  activeFootagePathRef.current = activeFootagePath;
+  const previewAssetRef = useRef(previewAsset);
+  previewAssetRef.current = previewAsset;
+  const assetsRef = useRef(assets);
+  assetsRef.current = assets;
 
-  // Persist State
+  const handleRemoveAssets = (idsToRemove: string[]) => {
+    const toRemoveSet = new Set(idsToRemove);
+    const removed = assetsRef.current.filter((a) => toRemoveSet.has(a.id));
+    if (removed.length === 0) return;
+
+    const wasPreview = Boolean(
+      previewAssetRef.current && (
+        toRemoveSet.has(previewAssetRef.current.id) ||
+        removed.some((a) => a.path === previewAssetRef.current?.path)
+      )
+    );
+    const wasFootage = Boolean(
+      activeFootagePathRef.current && removed.some((a) => a.path === activeFootagePathRef.current)
+    );
+
+    const entry: DeletedAssetEntry = {
+      assets: removed,
+      wasVoicePath: removed.some((a) => a.path === activeVoicePathRef.current) ? activeVoicePathRef.current : undefined,
+      wasScriptPath: removed.some((a) => a.path === activeScriptPathRef.current) ? activeScriptPathRef.current : undefined,
+      wasFootagePath: wasFootage ? activeFootagePathRef.current : undefined,
+    };
+
+    deletedHistoryRef.current.push(entry);
+    setAssets((prev) => prev.filter((a) => !toRemoveSet.has(a.id)));
+
+    // If the deleted file is currently in preview, clear preview immediately
+    if (wasPreview || wasFootage) {
+      handleClearPreview();
+    }
+
+    if (removed.some((a) => a.path === activeVoicePathRef.current)) {
+      setActiveVoicePath('');
+    }
+
+    if (removed.some((a) => a.path === activeScriptPathRef.current)) {
+      setActiveScriptPath('');
+    }
+  };
+
+  const handleUndoDelete = () => {
+    const entry = deletedHistoryRef.current.pop();
+    if (!entry || entry.assets.length === 0) return;
+
+    setAssets((prev) => {
+      const existingPaths = new Set(prev.map((a) => a.path));
+      const toRestore = entry.assets.filter((a) => !existingPaths.has(a.path));
+      return [...prev, ...toRestore];
+    });
+
+    if (entry.wasVoicePath) {
+      setActiveVoicePath(entry.wasVoicePath);
+    }
+    if (entry.wasScriptPath) {
+      setActiveScriptPath(entry.wasScriptPath);
+    }
+    if (entry.wasFootagePath) {
+      setActiveFootagePath(entry.wasFootagePath);
+      const matched = entry.assets.find((a) => a.path === entry.wasFootagePath);
+      if (matched) setPreviewAsset(matched);
+    }
+  };
+
+  // Active Drag & Drop State
+  const [hoverDropZone, setHoverDropZone] = useState<string | null>(null);
+
+  const handleClearPreview = () => {
+    setPreviewAsset(null);
+    setActiveFootagePath('');
+    setSegments([]);
+    localStorage.removeItem(STORAGE_KEY_SEGMENTS);
+    setIsPlaying(false);
+    setCurrentPlaybackTime(0);
+    currentPlaybackTimeRef.current = 0;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+  };
+
+  // Scan user's media pool directory and configure window
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
-  }, [config]);
+    invoke<Array<{
+      id: string;
+      name: string;
+      path: string;
+      file_type: string;
+      size_bytes: number;
+      duration?: number | null;
+    }>>('scan_workspace_media', { customDir: outputDir })
+      .then((scanned) => {
+        if (!scanned || scanned.length === 0) return;
+
+        setAssets((prev) => {
+          // 1. Update existing assets with accurate size, duration, and canonical absolute path
+          const updated = prev.map((asset) => {
+            const match = scanned.find(
+              (s) =>
+                s.name.toLowerCase() === asset.name.toLowerCase() ||
+                normalizeAssetPath(s.path).toLowerCase() === normalizeAssetPath(asset.path).toLowerCase()
+            );
+            if (match) {
+              return {
+                ...asset,
+                path: normalizeAssetPath(match.path),
+                sizeBytes: match.size_bytes > 0 ? match.size_bytes : asset.sizeBytes,
+                duration: match.duration || asset.duration,
+              };
+            }
+            return {
+              ...asset,
+              path: normalizeAssetPath(asset.path),
+            };
+          });
+
+          // 2. Add scanned items not yet in updated
+          const existingNames = new Set(updated.map((a) => a.name.toLowerCase()));
+          const newItems: MediaAsset[] = [];
+          for (const item of scanned) {
+            const norm = item.name.toLowerCase();
+            if (norm.startsWith('sample_')) continue;
+            if (!existingNames.has(norm)) {
+              newItems.push({
+                id: item.id,
+                name: item.name,
+                path: normalizeAssetPath(item.path),
+                fileType: item.file_type as any,
+                sizeBytes: item.size_bytes,
+                duration: item.duration || undefined,
+              });
+              existingNames.add(norm);
+            }
+          }
+
+          const deduped = cleanDeduplicateAssets([...updated, ...newItems]);
+          return deduped;
+        });
+      })
+      .catch((err) => console.warn('Workspace media scan failed:', err));
+
+    // Ensure comfortable wide NLE layout (1400x860) matching user preference
+    try {
+      const appWindow = getCurrentWindow();
+      appWindow.innerSize().then((size) => {
+        if (size.width < 1300 || size.height < 800) {
+          appWindow.setSize(new LogicalSize(1400, 860)).catch(() => {});
+          appWindow.center().catch(() => {});
+        }
+      }).catch(() => {
+        appWindow.setSize(new LogicalSize(1400, 860)).catch(() => {});
+        appWindow.center().catch(() => {});
+      });
+    } catch (e) {
+      console.warn('Window resize error:', e);
+    }
+  }, []);
+
+  // Global dragover listener to prevent forbidden cursor
+  useEffect(() => {
+    const handleGlobalDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    };
+
+    window.addEventListener('dragover', handleGlobalDragOver);
+
+    return () => {
+      window.removeEventListener('dragover', handleGlobalDragOver);
+    };
+  }, []);
+
+  // Compute Total Duration
+  const totalDuration = React.useMemo(() => {
+    if (previewAsset) {
+      return previewAsset.duration && previewAsset.duration > 0 ? previewAsset.duration : 0;
+    }
+    if (segments.length > 0) {
+      return Math.max(...segments.map((s) => s.endTime));
+    }
+    const voiceAsset = assets.find((a) => a.path === activeVoicePath);
+    if (voiceAsset && voiceAsset.duration) {
+      return voiceAsset.duration;
+    }
+    return 0;
+  }, [segments, assets, activeVoicePath, previewAsset]);
+
+  // Persist State to LocalStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_ASSETS, JSON.stringify(assets));
+  }, [assets]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
-  }, [settings]);
+    localStorage.setItem(STORAGE_KEY_VOICE, activeVoicePath);
+  }, [activeVoicePath]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_SCRIPT, activeScriptPath);
+  }, [activeScriptPath]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_OUTPUT_DIR, outputDir);
+  }, [outputDir]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_SEGMENTS, JSON.stringify(segments));
   }, [segments]);
 
-  // Real-time Playback Timer
   useEffect(() => {
-    if (isPlaying) {
-      playbackIntervalRef.current = setInterval(() => {
-        setCurrentTime((prev) => {
-          if (prev >= totalDuration) {
-            setIsPlaying(false);
-            return 0;
-          }
-          return prev + 0.05;
-        });
-      }, 50);
-    } else {
-      if (playbackIntervalRef.current) {
-        clearInterval(playbackIntervalRef.current);
+    localStorage.setItem(STORAGE_KEY_LEFT_WIDTH, leftWidth.toString());
+  }, [leftWidth]);
+
+
+  // Synchronize Audio Playback & Clock for Timeline Mode
+  useEffect(() => {
+    if (!isPlaying) {
+      if (audioRef.current && !audioRef.current.paused) {
+        audioRef.current.pause();
       }
+      return;
     }
-    return () => {
-      if (playbackIntervalRef.current) clearInterval(playbackIntervalRef.current);
+
+    // In direct asset preview mode, ProgramMonitor's video element is the master clock!
+    if (previewAsset) {
+      return;
+    }
+
+    const shouldPlayVoice = Boolean(activeVoicePath && segments.length > 0);
+    if (shouldPlayVoice && audioRef.current) {
+      audioRef.current.play().catch(() => {});
+    }
+
+    let lastTimestamp = performance.now();
+    let animId: number;
+
+    const tick = (now: number) => {
+      const delta = (now - lastTimestamp) / 1000;
+      lastTimestamp = now;
+
+      if (shouldPlayVoice && audioRef.current && !audioRef.current.paused) {
+        const audioTime = audioRef.current.currentTime;
+        currentPlaybackTimeRef.current = audioTime;
+        setCurrentPlaybackTime(audioTime);
+        if (totalDuration > 0 && audioTime >= totalDuration) {
+          setIsPlaying(false);
+          return;
+        }
+      } else {
+        const nextTime = currentPlaybackTimeRef.current + delta;
+        if (totalDuration > 0 && nextTime >= totalDuration) {
+          currentPlaybackTimeRef.current = totalDuration;
+          setCurrentPlaybackTime(totalDuration);
+          setIsPlaying(false);
+          return;
+        } else {
+          currentPlaybackTimeRef.current = nextTime;
+          setCurrentPlaybackTime(nextTime);
+        }
+      }
+
+      animId = requestAnimationFrame(tick);
     };
-  }, [isPlaying, totalDuration]);
 
-  const addLog = (stage: ProcessingLog['stage'], message: string) => {
-    const time = new Date().toLocaleTimeString();
-    setLogs((prev) => [{ timestamp: time, stage, message }, ...prev]);
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
+  }, [isPlaying, activeVoicePath, totalDuration, previewAsset, segments.length]);
+
+  const handleTimeUpdate = (time: number) => {
+    currentPlaybackTimeRef.current = time;
+    setCurrentPlaybackTime(time);
   };
 
-  const handlePickVoice = async () => {
-    try {
-      const selected = await invoke<string | null>('pick_file_voice');
-      if (selected) {
-        setConfig((prev) => ({ ...prev, voicePath: selected }));
-        addLog('idle', `Selected voice file: ${selected}`);
-      }
-    } catch (e) {
-      console.warn('File dialog fallback:', e);
+  const handleSeek = (time: number, autoPlay: boolean = false) => {
+    const maxDur = totalDuration > 0 ? totalDuration : (previewAsset?.duration || 0);
+    const safeTime = maxDur > 0 ? Math.max(0, Math.min(maxDur, time)) : Math.max(0, time);
+    currentPlaybackTimeRef.current = safeTime;
+    setCurrentPlaybackTime(safeTime);
+    if (audioRef.current && !previewAsset) {
+      audioRef.current.currentTime = safeTime;
+    }
+    if (autoPlay && !isPlaying) {
+      setIsPlaying(true);
     }
   };
 
-  const handlePickScript = async () => {
-    try {
-      const selected = await invoke<string | null>('pick_file_script');
-      if (selected) {
-        setConfig((prev) => ({ ...prev, scriptPath: selected }));
-        addLog('idle', `Selected script file: ${selected}`);
-      }
-    } catch (e) {
-      console.warn('File dialog fallback:', e);
+  const handleTogglePlay = () => {
+    if (totalDuration > 0 && currentPlaybackTimeRef.current >= totalDuration) {
+      handleSeek(0);
     }
+    setIsPlaying((prev) => !prev);
   };
+
+
+  // Global Keyboard Shortcuts (Space = Play/Pause, Left/Right = -5s/+5s, J/L = -5s/+5s)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
+        e.preventDefault();
+        handleUndoDelete();
+        return;
+      }
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        handleTogglePlay();
+      } else if (e.key === 'ArrowLeft' || e.key === 'j' || e.key === 'J') {
+        e.preventDefault();
+        handleSeek(Math.max(0, currentPlaybackTimeRef.current - 5));
+      } else if (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L') {
+        e.preventDefault();
+        handleSeek(Math.min(totalDuration, currentPlaybackTimeRef.current + 5));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [totalDuration, isPlaying]);
 
   const handlePickOutputDir = async () => {
     try {
       const selected = await invoke<string | null>('pick_directory_output');
       if (selected) {
-        setConfig((prev) => ({ ...prev, outputDir: selected }));
-        addLog('idle', `Selected output directory: ${selected}`);
+        setOutputDir(selected);
       }
     } catch (e) {
-      console.warn('File dialog fallback:', e);
+      console.warn('Pick output dir error:', e);
     }
   };
 
-  const handlePickImagesDir = async () => {
-    try {
-      const selected = await invoke<string | null>('pick_directory_images');
-      if (selected) {
-        setConfig((prev) => ({ ...prev, imagesDir: selected }));
-        addLog('idle', `Selected images folder: ${selected}`);
-      }
-    } catch (e) {
-      console.warn('File dialog fallback:', e);
-    }
-  };
 
-  const handleLoadDemo = async () => {
-    try {
-      const demo = await invoke<{ voicePath: string; scriptPath: string; outputDir: string; brollPath: string }>('load_demo_project');
-      if (demo) {
-        setConfig({
-          voicePath: demo.voicePath,
-          scriptPath: demo.scriptPath,
-          outputDir: demo.outputDir,
-          youtubeUrls: [],
-          imagesDir: '',
-        });
-        addLog('completed', 'Loaded demo project assets! Ready to export.');
-      }
-    } catch (e) {
-      console.warn('Demo load error:', e);
-      addLog('error', `Failed to load demo: ${e}`);
-    }
-  };
-
-  const handleToggleAssetType = (id: number) => {
-    setSegments((prev) =>
-      prev.map((seg) =>
-        seg.id === id
-          ? { ...seg, assetType: seg.assetType === 'video' ? 'image' : 'video' }
-          : seg
-      )
-    );
-  };
-
-  const handleReset = () => {
-    setStatus('idle');
-    setSegments([]);
-    setLogs([]);
-    setCurrentTime(0);
-    setIsPlaying(false);
-    localStorage.removeItem(STORAGE_KEY_CONFIG);
-    localStorage.removeItem(STORAGE_KEY_SETTINGS);
-    localStorage.removeItem(STORAGE_KEY_SEGMENTS);
-  };
-
-  const handleOpenFolder = async () => {
-    if (!config.outputDir) return;
-    try {
-      await invoke('open_directory', { path: config.outputDir });
-    } catch (e) {
-      console.warn('Open folder error:', e);
-    }
-  };
-
-  const handleProcessAndExport = async () => {
-    if (!config.voicePath || !config.scriptPath || !config.outputDir) {
-      addLog('error', 'Please link Voice MP4, Script TXT, and Output Directory first!');
+  const handleExportPremiereXml = async () => {
+    if (segments.length === 0 || !activeVoicePath) {
+      setExportMessage('Assign voiceover and run AI Matcher first');
       return;
     }
 
-    setStatus('processing');
-    addLog('downloading', 'Starting SyncCut AI pipeline & Premiere XML generation...');
+    setIsExporting(true);
+    setExportMessage('Exporting Premiere Pro XML...');
 
     try {
-      const resultSegments = await invoke<SentenceSegment[]>('execute_pipeline', {
-        config,
-        settings,
-      });
-
-      setSegments(resultSegments);
-      setStatus('completed');
-      setCurrentTime(0);
-      addLog('completed', `Success! Exported Premiere XML with ${resultSegments.length} synchronized scenes.`);
-    } catch (e: any) {
-      console.error('Pipeline error:', e);
-      addLog('error', `Error executing pipeline: ${e?.toString() || 'Unknown error'}`);
-      setStatus('error');
-    }
-  };
-
-  const handleRenderVideo = async () => {
-    if (segments.length === 0 || !config.outputDir) return;
-    setIsRendering(true);
-    addLog('downloading', 'Rendering preview video with FFmpeg (slicing & merging)...');
-
-    try {
-      const renderedPath = await invoke<string>('render_preview_video', {
-        config,
+      const savedPath = await invoke<string>('export_premiere_xml_dialog', {
+        voicePath: activeVoicePath,
         segments,
+        fps: 30.0,
       });
-      addLog('completed', `Rendered video ready: ${renderedPath}`);
-      await invoke('open_file', { path: renderedPath });
-    } catch (e: any) {
-      console.error('Render error:', e);
-      addLog('error', `Render failed: ${e?.toString() || 'FFmpeg error'}`);
+      setExportMessage(`Exported: ${savedPath.split(/[/\\]/).pop()}`);
+    } catch (err: any) {
+      if (err !== 'Export cancelled.') {
+        console.error('Export XML error:', err);
+        setExportMessage(err?.toString() || 'Failed to export XML');
+      } else {
+        setExportMessage(null);
+      }
     } finally {
-      setIsRendering(false);
+      setIsExporting(false);
     }
   };
 
-  const canProcess = Boolean(config.voicePath && config.scriptPath && config.outputDir);
+  // Drag handlers for Column Splitter (Left vs Right)
+  const handleColResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = leftWidth;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const newWidth = Math.max(260, Math.min(window.innerWidth - 320, startWidth + deltaX));
+      setLeftWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+
+  const { language, setLanguage, t } = useLanguage();
+  const canExport = segments.length > 0 && Boolean(activeVoicePath);
+  const brollAssets = assets.filter((a) => a.fileType === 'video');
 
   return (
-    <div className="h-screen w-screen bg-[#0d1117] text-[#f0f6fc] flex flex-col font-sans overflow-hidden select-none">
-      {/* 1. Premiere Pro Workspace Top Header */}
-      <Header
-        status={status}
-        onReset={handleReset}
-        onOpenOutput={handleOpenFolder}
-        onLoadDemo={handleLoadDemo}
-        onProcessAndExport={handleProcessAndExport}
-        onRenderVideo={handleRenderVideo}
-        isProcessing={status === 'processing'}
-        isRendering={isRendering}
-        hasOutput={Boolean(config.outputDir && (status === 'completed' || segments.length > 0))}
-        currentTime={currentTime}
-        fps={settings.fps}
-        canProcess={canProcess}
+    <div className="h-screen w-screen bg-[#181818] text-[#e6e6e6] flex flex-col font-sans overflow-hidden select-none">
+      {/* Hidden Audio Player for Voiceover Sync */}
+      <audio
+        ref={audioRef}
+        src={
+          (!previewAsset && segments.length > 0 && activeVoicePath) ||
+          (previewAsset?.fileType === 'voice' && previewAsset.path)
+            ? safeConvertFileSrc(previewAsset?.fileType === 'voice' ? previewAsset.path : activeVoicePath)
+            : undefined
+        }
+        onTimeUpdate={() => {
+          if (audioRef.current && isPlaying && (!previewAsset || previewAsset.fileType === 'voice')) {
+            setCurrentPlaybackTime(audioRef.current.currentTime);
+          }
+        }}
+        onEnded={() => {
+          setIsPlaying(false);
+          setCurrentPlaybackTime(totalDuration);
+        }}
       />
 
-      {/* 2. Main Workspace Layout */}
-      <main className="flex-1 p-2 grid grid-rows-12 gap-2 overflow-hidden">
-        {/* UPPER HALF (Row 1-7): Project Bin (Left) + Program Monitor (Right) */}
-        <div className="row-span-7 grid grid-cols-12 gap-2 overflow-hidden">
-          {/* Top Left: Project Bin & Settings (5 cols) */}
-          <div className="col-span-5 h-full overflow-hidden">
-            <ProjectBin
-              config={config}
-              settings={settings}
-              segments={segments}
-              currentPlaybackTime={currentTime}
-              onConfigChange={setConfig}
-              onSettingsChange={setSettings}
-              onPickVoice={handlePickVoice}
-              onPickScript={handlePickScript}
-              onPickOutputDir={handlePickOutputDir}
-              onPickImagesDir={handlePickImagesDir}
-              onSelectSegmentTime={(t) => setCurrentTime(t)}
-              disabled={status === 'processing'}
-            />
-          </div>
-
-          {/* Top Right: Program Monitor / Video Preview (7 cols) */}
-          <div className="col-span-7 h-full overflow-hidden">
-            <ProgramMonitor
-              segments={segments}
-              currentPlaybackTime={currentTime}
-              totalDuration={totalDuration}
-              isPlaying={isPlaying}
-              fps={settings.fps}
-              onTogglePlay={() => setIsPlaying((p) => !p)}
-              onSeek={(t) => setCurrentTime(t)}
-            />
-          </div>
-        </div>
-
-        {/* LOWER HALF (Row 8-12): Multi-Track Premiere Timeline */}
-        <div className="row-span-5 h-full overflow-hidden">
-          <TimelineTrackView
-            segments={segments}
-            currentPlaybackTime={currentTime}
-            totalDuration={totalDuration}
-            isPlaying={isPlaying}
-            onTogglePlay={() => setIsPlaying((p) => !p)}
-            onSeek={(t) => setCurrentTime(t)}
-            onToggleAssetType={handleToggleAssetType}
-          />
-        </div>
-      </main>
-
-      {/* 3. Collapsible Console Log Drawer at Footer */}
-      <footer className="h-7 border-t border-[#30363d] bg-[#161b22] px-3 flex items-center justify-between text-[11px] font-mono relative">
+      {/* 1. Header Bar */}
+      <header className="h-10 bg-[#1f1f1f] border-b border-[#303030] px-3 flex items-center justify-between select-none shrink-0 z-20">
+        {/* Left: App Control Buttons (Settings & Update) */}
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setIsLogOpen((o) => !o)}
-            className="flex items-center gap-1 text-[#8b949e] hover:text-[#f0f6fc] font-mono"
+            type="button"
+            onClick={() => setIsSettingsOpen(true)}
+            className="px-3 py-1 bg-[#262626] hover:bg-[#333333] text-white text-xs font-medium rounded border border-[#3e3e3e] transition-colors cursor-pointer"
+            title={language === 'vi' ? 'Cài đặt thông số cơ bản' : 'Application Settings'}
           >
-            <Terminal className="w-3 h-3 text-[#58a6ff]" />
-            <span>Console ({logs.length})</span>
-            {isLogOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
+            {language === 'vi' ? 'Cài đặt' : 'Settings'}
           </button>
 
-          {logs.length > 0 && (
-            <span className="text-[#8b949e] truncate max-w-[500px]">
-              - {logs[0].message}
+          <button
+            type="button"
+            onClick={() => setIsUpdateOpen(true)}
+            className="px-3 py-1 bg-[#262626] hover:bg-[#333333] text-white text-xs font-medium rounded border border-[#3e3e3e] transition-colors cursor-pointer"
+            title={language === 'vi' ? 'Kiểm tra cập nhật tự động từ GitHub' : 'Check for Updates'}
+          >
+            {language === 'vi' ? 'Cập nhật' : 'Check Update'}
+          </button>
+        </div>
+
+        {/* Right: Action (Language switch & Export Premiere XML) */}
+        <div className="flex items-center gap-2">
+          {/* Language Switcher */}
+          <div className="flex items-center bg-[#181818] border border-[#333333] rounded text-[11px] font-mono select-none mr-1">
+            <button
+              type="button"
+              onClick={() => setLanguage('en')}
+              className={`px-2 py-0.5 rounded-xs transition-colors cursor-pointer ${
+                language === 'en' ? 'bg-[#333333] text-white font-semibold' : 'text-[#888888] hover:text-[#cccccc]'
+              }`}
+              title="English"
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              onClick={() => setLanguage('vi')}
+              className={`px-2 py-0.5 rounded-xs transition-colors cursor-pointer ${
+                language === 'vi' ? 'bg-[#333333] text-white font-semibold' : 'text-[#888888] hover:text-[#cccccc]'
+              }`}
+              title="Tiếng Việt"
+            >
+              VI
+            </button>
+          </div>
+
+          {exportMessage && (
+            <span className="text-[11px] text-[#a0a0a0] font-mono pr-2 truncate max-w-[320px]">
+              {exportMessage}
             </span>
           )}
-        </div>
 
-        <div className="flex items-center gap-3 text-[#6e7681]">
-          <span>SyncCut v0.1.0 NLE Workspace</span>
+          <button
+            type="button"
+            disabled={!canExport || isExporting}
+            onClick={handleExportPremiereXml}
+            className="px-3.5 py-1.5 bg-[#333333] hover:bg-[#404040] disabled:bg-[#202020] disabled:text-[#555555] text-white text-xs font-semibold rounded border border-[#666666] transition-colors shadow-sm cursor-pointer"
+            title="Export synchronized timeline as Adobe Premiere Pro XML"
+          >
+            {isExporting ? t.exporting : t.exportXml}
+          </button>
         </div>
+      </header>
 
-        {/* Expanded Console Drawer Popup */}
-        {isLogOpen && (
-          <div className="absolute bottom-7 left-0 right-0 h-44 bg-[#0d1117] border-t border-[#30363d] p-2.5 overflow-y-auto z-50 flex flex-col gap-1 shadow-2xl">
-            {logs.map((l, i) => (
-              <div key={i} className="flex items-start gap-2 leading-relaxed">
-                <span className="text-[#6e7681]">[{l.timestamp}]</span>
-                <span
-                  className={
-                    l.stage === 'error'
-                      ? 'text-[#f85149]'
-                      : l.stage === 'completed'
-                      ? 'text-[#3fb950]'
-                      : l.stage === 'downloading'
-                      ? 'text-[#e3b341]'
-                      : 'text-[#c9d1d9]'
-                  }
-                >
-                  {l.message}
-                </span>
-              </div>
-            ))}
+      {/* 2. Clean 2-Pane Workspace & Preview Layout */}
+      <main className="flex-1 flex flex-row min-h-0 overflow-hidden">
+        {/* LEFT WORKSPACE: Resizable Width */}
+        <section
+          className="bg-[#1a1a1a] flex flex-col h-full overflow-hidden shrink-0"
+          style={{ width: `${leftWidth}px` }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+          }}
+          onDrop={(e) => {
+            const unmountSlot = e.dataTransfer.getData('unmount-slot');
+            if (unmountSlot === 'voice') {
+              e.preventDefault();
+              setActiveVoicePath('');
+              setExportMessage('Voiceover unmounted');
+            } else if (unmountSlot === 'script') {
+              e.preventDefault();
+              setActiveScriptPath('');
+              setExportMessage('Script unmounted');
+            } else if (unmountSlot === 'footage' || unmountSlot === 'video') {
+              e.preventDefault();
+              handleClearPreview();
+              setExportMessage('Footage preview unmounted');
+            }
+          }}
+        >
+          {/* Workplace Tab Navigation Bar - Docked Flush (No Gap) */}
+          <div className="h-8 bg-[#181818] border-b border-[#2e2e2e] flex items-end px-3 gap-1 shrink-0 select-none">
+            <button
+              type="button"
+              onClick={() => setWorkspaceTab('pool')}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-t-sm transition-colors cursor-pointer focus:outline-none ${
+                workspaceTab === 'pool'
+                  ? 'bg-[#1e1e1e] text-white border-t border-l border-r border-[#2e2e2e] border-b border-b-[#1e1e1e] -mb-px relative z-10'
+                  : 'bg-transparent text-[#888888] hover:text-white border-t border-l border-r border-transparent mb-0'
+              }`}
+            >
+              {t.mediaPool} ({assets.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setWorkspaceTab('matcher')}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-t-sm transition-colors cursor-pointer focus:outline-none ${
+                workspaceTab === 'matcher'
+                  ? 'bg-[#1e1e1e] text-white border-t border-l border-r border-[#2e2e2e] border-b border-b-[#1e1e1e] -mb-px relative z-10'
+                  : 'bg-transparent text-[#888888] hover:text-white border-t border-l border-r border-transparent mb-0'
+              }`}
+            >
+              {t.aiMatcher}
+            </button>
           </div>
-        )}
-      </footer>
+
+          {/* Workplace Content Container */}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {workspaceTab === 'pool' ? (
+              <MediaPoolTab
+                assets={assets}
+                segments={segments}
+                activeVoicePath={activeVoicePath}
+                activeScriptPath={activeScriptPath}
+                onSelectVoice={(path) => setActiveVoicePath(path)}
+                onSelectScript={(path) => setActiveScriptPath(path)}
+                onSelectFootage={(path) => setActiveFootagePath(path)}
+                onPreviewAsset={(asset) => {
+                  setPreviewAsset(asset);
+                  if (isVideoAsset(asset) || asset.fileType === 'image') {
+                    setActiveFootagePath(asset.path);
+                  }
+                  setCurrentPlaybackTime(0);
+                  currentPlaybackTimeRef.current = 0;
+                  setIsPlaying(false);
+                }}
+                onAddAssets={(newAssets) => {
+                  setAssets((prev) => {
+                    const existingPaths = new Set(prev.map((a) => a.path));
+                    const filtered = newAssets.filter((a) => !existingPaths.has(a.path));
+                    return [...prev, ...filtered];
+                  });
+                }}
+                onRemoveAsset={(id) => handleRemoveAssets([id])}
+                onRemoveAssets={handleRemoveAssets}
+                onOpenYouTubePopup={() => setIsYouTubePopupOpen(true)}
+                previewAsset={previewAsset}
+                onClearPreview={handleClearPreview}
+                setHoverDropZone={setHoverDropZone}
+              />
+            ) : (
+              <div className="h-full p-2.5 bg-[#1e1e1e] overflow-y-auto">
+                <AIMatcherTab
+                  activeVoicePath={activeVoicePath}
+                  activeScriptPath={activeScriptPath}
+                  brollAssets={brollAssets}
+                  segments={segments}
+                  outputDir={outputDir}
+                  onSegmentsMatched={(matched) => {
+                    setSegments(matched);
+                    if (matched.length > 0) {
+                      setCurrentPlaybackTime(0);
+                    }
+                  }}
+                  onSelectSegment={(seg) => {
+                    setPreviewAsset(null);
+                    handleSeek(seg.startTime);
+                  }}
+                  onNavigateToMediaPool={() => setWorkspaceTab('pool')}
+                />
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* DRAGGABLE VERTICAL COLUMN SPLITTER (Resizes Left vs Right) */}
+        <div
+          onMouseDown={handleColResizeMouseDown}
+          className="w-[3px] bg-[#262626] hover:bg-[#4f4f4f] active:bg-[#666666] cursor-col-resize transition-colors select-none z-20 shrink-0"
+          title="Drag to resize panel width"
+        />
+
+        {/* RIGHT PREVIEW MONITOR: Flexible Width */}
+        <section className="flex-1 min-w-0 bg-[#121212] flex flex-col h-full overflow-hidden">
+          {/* Scientific Modular AI Pipeline Slotting Dock */}
+          <AIPipelineDock
+            assets={assets}
+            activeVoicePath={activeVoicePath}
+            activeScriptPath={activeScriptPath}
+            activeFootagePath={activeFootagePath}
+            onSelectFootage={(path) => {
+              setActiveFootagePath(path);
+              const matched = assets.find((a) => a.path === path);
+              if (matched) {
+                setPreviewAsset(matched);
+                setCurrentPlaybackTime(0);
+                currentPlaybackTimeRef.current = 0;
+                setIsPlaying(false);
+              } else {
+                setPreviewAsset(null);
+              }
+            }}
+            segments={segments}
+            outputDir={outputDir}
+            hoverDropZone={hoverDropZone}
+            onSelectVoice={(path) => {
+              setActiveVoicePath(path);
+            }}
+            onSelectScript={(path) => {
+              setActiveScriptPath(path);
+            }}
+            onLoadToPreview={(asset) => {
+              if (isVideoAsset(asset) || asset.fileType === 'image') {
+                setPreviewAsset(asset);
+                setCurrentPlaybackTime(0);
+                currentPlaybackTimeRef.current = 0;
+                setIsPlaying(false);
+              }
+            }}
+            onClearPreview={handleClearPreview}
+            onAddAssets={(newAssets) => {
+              setAssets((prev) => {
+                const existingPaths = new Set(prev.map((a) => a.path));
+                const filtered = newAssets.filter((a) => !existingPaths.has(a.path));
+                return [...prev, ...filtered];
+              });
+            }}
+            onSegmentsMatched={(matched) => {
+              setSegments(matched);
+              if (matched.length > 0) {
+                setCurrentPlaybackTime(0);
+              }
+            }}
+          />
+
+          <ProgramMonitor
+            segments={segments}
+            currentPlaybackTime={currentPlaybackTime}
+            totalDuration={totalDuration}
+            isPlaying={isPlaying}
+            fps={30}
+            previewAsset={previewAsset}
+            hoverDropZone={hoverDropZone}
+            onTogglePlay={handleTogglePlay}
+            onSeek={handleSeek}
+            onTimeUpdate={handleTimeUpdate}
+            onClearPreview={handleClearPreview}
+            onAddAssets={(newAssets) => {
+              setAssets((prev) => {
+                const existingPaths = new Set(prev.map((a) => a.path));
+                const filtered = newAssets.filter((a) => !existingPaths.has(a.path));
+                return [...prev, ...filtered];
+              });
+            }}
+            onLoadToPreview={(asset) => {
+              if (asset.fileType === 'voice') {
+                setActiveVoicePath(asset.path);
+              } else if (asset.fileType === 'script') {
+                setActiveScriptPath(asset.path);
+              } else {
+                setPreviewAsset(asset);
+                setActiveFootagePath(asset.path);
+                setCurrentPlaybackTime(0);
+                currentPlaybackTimeRef.current = 0;
+                setIsPlaying(false);
+              }
+            }}
+            onSelectVoice={(path) => {
+              setActiveVoicePath(path);
+            }}
+            onSelectScript={(path) => {
+              setActiveScriptPath(path);
+            }}
+          />
+        </section>
+      </main>
+
+      {/* 3. Floating YouTube Downloader Modal (Non-blurring background) */}
+      <YouTubeDownloadModal
+        isOpen={isYouTubePopupOpen}
+        outputDir={outputDir}
+        onClose={() => setIsYouTubePopupOpen(false)}
+        onPickOutputDir={handlePickOutputDir}
+        onMediaDownloaded={(newAsset) => {
+          const absAsset: MediaAsset = {
+            ...newAsset,
+            path: normalizeAssetPath(newAsset.path),
+          };
+          setAssets((prev) => {
+            const updated = prev.filter((a) => a.name.toLowerCase() !== absAsset.name.toLowerCase());
+            return cleanDeduplicateAssets([...updated, absAsset]);
+          });
+          setIsYouTubePopupOpen(false);
+          setExportMessage(`Downloaded: ${absAsset.name}`);
+        }}
+      />
+
+      {/* 4. Application Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        outputDir={outputDir}
+        onClose={() => setIsSettingsOpen(false)}
+        onPickOutputDir={handlePickOutputDir}
+      />
+
+      {/* 5. Software Update Modal (GitHub Releases) */}
+      <UpdateModal
+        isOpen={isUpdateOpen}
+        onClose={() => setIsUpdateOpen(false)}
+      />
+
+      {/* 6. First Run Media Pool Setup Modal */}
+      <FirstRunSetupModal
+        isOpen={isFirstRunOpen}
+        currentFolder={outputDir}
+        onConfirm={handleConfirmFirstRun}
+      />
+
     </div>
   );
 };

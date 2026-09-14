@@ -12,6 +12,24 @@ dist
 dist-ssr
 *.local
 
+# Tauri & Rust build artifacts
+src-tauri/target/
+target/
+
+# Local binaries and model weights (>100MB blocked by GitHub)
+bin/
+*.bin
+
+# Temporary workspace & user data folders
+scratch/
+media_pool/
+demo_output/
+downloads/
+demo_assets/
+src-tauri/demo_assets/
+test_out.mp4
+*.mp4
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

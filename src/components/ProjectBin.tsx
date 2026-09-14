@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Folder, Mic, FileText, Video, Image, Sliders, ListOrdered, Plus, Trash2, CheckCircle2, Film, Clock, Gauge } from 'lucide-react';
 import { ProjectConfig, InterleavingSettings, SentenceSegment } from '../types';
 
 interface ProjectBinProps {
@@ -14,6 +13,7 @@ interface ProjectBinProps {
   onPickOutputDir: () => void;
   onPickImagesDir: () => void;
   onSelectSegmentTime: (time: number) => void;
+  onOpenYouTubeDownloader: () => void;
   disabled: boolean;
 }
 
@@ -29,9 +29,10 @@ export const ProjectBin: React.FC<ProjectBinProps> = ({
   onPickOutputDir,
   onPickImagesDir,
   onSelectSegmentTime,
+  onOpenYouTubeDownloader,
   disabled,
 }) => {
-  const [activeTab, setActiveTab] = useState<'assets' | 'settings' | 'inspector'>('assets');
+  const [activeTab, setActiveTab] = useState<'assets' | 'settings' | 'script'>('assets');
   const [urlInput, setUrlInput] = useState('');
 
   const handleAddUrl = () => {
@@ -61,168 +62,175 @@ export const ProjectBin: React.FC<ProjectBinProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#161b22] border border-[#30363d] rounded-lg overflow-hidden select-none">
-      {/* Premiere Bin Tab Bar */}
-      <div className="flex items-center justify-between border-b border-[#30363d] bg-[#0d1117] px-2 pt-1.5">
+    <div className="flex flex-col h-full bg-[#232323] border border-[#333333] select-none text-xs rounded-sm overflow-hidden">
+      {/* Tab Navigation */}
+      <div className="h-8 bg-[#2b2b2b] border-b border-[#383838] px-2 flex items-center justify-between">
         <div className="flex items-center gap-1">
           <button
+            type="button"
             onClick={() => setActiveTab('assets')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-t border-t border-x transition-colors ${
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
               activeTab === 'assets'
-                ? 'bg-[#161b22] border-[#30363d] text-[#f0f6fc] border-b-transparent'
-                : 'border-transparent text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#161b22]/50'
+                ? 'text-white border-b-2 border-white bg-[#232323]'
+                : 'text-[#888888] hover:text-[#e0e0e0]'
             }`}
           >
-            <Folder className="w-3.5 h-3.5 text-[#58a6ff]" />
-            Project Assets
+            Assets ({config.voicePath ? 'Ready' : 'Empty'})
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('settings')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-t border-t border-x transition-colors ${
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
               activeTab === 'settings'
-                ? 'bg-[#161b22] border-[#30363d] text-[#f0f6fc] border-b-transparent'
-                : 'border-transparent text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#161b22]/50'
+                ? 'text-white border-b-2 border-white bg-[#232323]'
+                : 'text-[#888888] hover:text-[#e0e0e0]'
             }`}
           >
-            <Sliders className="w-3.5 h-3.5 text-[#e3b341]" />
-            Pacing & Ratio
+            Pacing
           </button>
 
           <button
-            onClick={() => setActiveTab('inspector')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-t border-t border-x transition-colors ${
-              activeTab === 'inspector'
-                ? 'bg-[#161b22] border-[#30363d] text-[#f0f6fc] border-b-transparent'
-                : 'border-transparent text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#161b22]/50'
+            type="button"
+            onClick={() => setActiveTab('script')}
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              activeTab === 'script'
+                ? 'text-white border-b-2 border-white bg-[#232323]'
+                : 'text-[#888888] hover:text-[#e0e0e0]'
             }`}
           >
-            <ListOrdered className="w-3.5 h-3.5 text-[#3fb950]" />
             Script ({segments.length})
           </button>
         </div>
 
-        <span className="text-[10px] font-mono text-[#6e7681] pr-2">BIN / SOURCES</span>
+        <span className="text-[10px] text-[#606060] font-mono pr-1">PROJECT BIN</span>
       </div>
 
-      {/* Tab Content Body */}
-      <div className="flex-1 p-3 overflow-y-auto">
+      {/* Tab Content */}
+      <div className="flex-1 p-2.5 overflow-y-auto bg-[#1e1e1e]">
         {/* TAB 1: ASSETS */}
         {activeTab === 'assets' && (
-          <div className="flex flex-col gap-3 text-xs">
-            {/* Voice File Picker */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-mono text-[#8b949e] flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <Mic className="w-3.5 h-3.5 text-[#58a6ff]" />
-                  Voiceover Track (MP4/WAV)
-                </span>
-                {config.voicePath && (
-                  <span className="text-[10px] text-[#3fb950] flex items-center gap-0.5">
-                    <CheckCircle2 className="w-3 h-3" /> Linked
+          <div className="flex flex-col gap-2">
+            {/* 1. Voice File */}
+            <div className="flex items-center justify-between p-2 bg-[#262626] border border-[#333333] rounded">
+              <div className="flex items-center gap-2 truncate flex-1">
+                <div className="px-1.5 py-0.5 rounded bg-[#333333] border border-[#444444] text-[#e6e6e6] font-mono font-bold text-[10px]">
+                  A1
+                </div>
+                <div className="flex flex-col truncate">
+                  <span className="text-[11px] font-medium text-[#e6e6e6] truncate">
+                    {config.voicePath ? getFileName(config.voicePath) : 'Select voice track (.mp4 / .wav)'}
                   </span>
-                )}
-              </label>
+                  <span className="text-[9px] text-[#707070] font-mono">Master audio</span>
+                </div>
+              </div>
               <button
                 type="button"
                 disabled={disabled}
                 onClick={onPickVoice}
-                className="px-2.5 py-1.5 bg-[#0d1117] hover:bg-[#21262d] border border-[#30363d] text-[#c9d1d9] rounded text-left truncate font-mono transition-colors"
+                className="px-2.5 py-1 bg-[#333333] hover:bg-[#3d3d3d] text-[11px] text-[#cccccc] hover:text-white rounded border border-[#404040]"
               >
-                {config.voicePath ? getFileName(config.voicePath) : 'Click to link Voiceover MP4/WAV...'}
+                {config.voicePath ? 'Change' : 'Browse'}
               </button>
             </div>
 
-            {/* Script File Picker */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-mono text-[#8b949e] flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-[#58a6ff]" />
-                  Script Text (.TXT)
-                </span>
-                {config.scriptPath && (
-                  <span className="text-[10px] text-[#3fb950] flex items-center gap-0.5">
-                    <CheckCircle2 className="w-3 h-3" /> Linked
+            {/* 2. Script TXT */}
+            <div className="flex items-center justify-between p-2 bg-[#262626] border border-[#333333] rounded">
+              <div className="flex items-center gap-2 truncate flex-1">
+                <div className="px-1.5 py-0.5 rounded bg-[#333333] border border-[#444444] text-[#e6e6e6] font-mono font-bold text-[10px]">
+                  TXT
+                </div>
+                <div className="flex flex-col truncate">
+                  <span className="text-[11px] font-medium text-[#e6e6e6] truncate">
+                    {config.scriptPath ? getFileName(config.scriptPath) : 'Select script text (.txt)'}
                   </span>
-                )}
-              </label>
+                  <span className="text-[9px] text-[#707070] font-mono">Script ground truth</span>
+                </div>
+              </div>
               <button
                 type="button"
                 disabled={disabled}
                 onClick={onPickScript}
-                className="px-2.5 py-1.5 bg-[#0d1117] hover:bg-[#21262d] border border-[#30363d] text-[#c9d1d9] rounded text-left truncate font-mono transition-colors"
+                className="px-2.5 py-1 bg-[#333333] hover:bg-[#3d3d3d] text-[11px] text-[#cccccc] hover:text-white rounded border border-[#404040]"
               >
-                {config.scriptPath ? getFileName(config.scriptPath) : 'Click to link Script .txt...'}
+                {config.scriptPath ? 'Change' : 'Browse'}
               </button>
             </div>
 
-            {/* Output Destination Folder */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-mono text-[#8b949e] flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <Folder className="w-3.5 h-3.5 text-[#58a6ff]" />
-                  Output Destination (XML Project)
-                </span>
-                {config.outputDir && (
-                  <span className="text-[10px] text-[#3fb950] flex items-center gap-0.5">
-                    <CheckCircle2 className="w-3 h-3" /> Set
+            {/* 3. Output Folder */}
+            <div className="flex items-center justify-between p-2 bg-[#262626] border border-[#333333] rounded">
+              <div className="flex items-center gap-2 truncate flex-1">
+                <div className="px-1.5 py-0.5 rounded bg-[#333333] border border-[#444444] text-[#e6e6e6] font-mono font-bold text-[10px]">
+                  DIR
+                </div>
+                <div className="flex flex-col truncate">
+                  <span className="text-[11px] font-medium text-[#e6e6e6] truncate">
+                    {config.outputDir ? getFileName(config.outputDir) : 'Select output folder'}
                   </span>
-                )}
-              </label>
+                  <span className="text-[9px] text-[#707070] font-mono">Premiere XML destination</span>
+                </div>
+              </div>
               <button
                 type="button"
                 disabled={disabled}
                 onClick={onPickOutputDir}
-                className="px-2.5 py-1.5 bg-[#0d1117] hover:bg-[#21262d] border border-[#30363d] text-[#c9d1d9] rounded text-left truncate font-mono transition-colors"
+                className="px-2.5 py-1 bg-[#333333] hover:bg-[#3d3d3d] text-[11px] text-[#cccccc] hover:text-white rounded border border-[#404040]"
               >
-                {config.outputDir || 'Click to select project output folder...'}
+                {config.outputDir ? 'Change' : 'Browse'}
               </button>
             </div>
 
-            {/* YouTube B-Roll Sources */}
-            <div className="flex flex-col gap-1.5 pt-2 border-t border-[#21262d]">
-              <label className="text-[11px] font-mono text-[#8b949e] flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <Video className="w-3.5 h-3.5 text-[#f85149]" />
-                  YouTube B-Roll Queue
+            {/* 4. YouTube B-Roll Queue */}
+            <div className="flex flex-col gap-1.5 p-2 bg-[#232323] border border-[#303030] rounded">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-[#e0e0e0] font-medium">
+                  YouTube B-Roll ({config.youtubeUrls.length})
                 </span>
-                <span className="text-[10px] text-[#6e7681] font-mono">{config.youtubeUrls.length} source(s)</span>
-              </label>
-              <div className="flex gap-1.5">
+
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={onOpenYouTubeDownloader}
+                  className="px-2 py-0.5 bg-[#2a2a2a] hover:bg-[#353535] border border-[#444444] text-[#cccccc] hover:text-white rounded text-[10px] font-medium transition-colors"
+                >
+                  Downloader...
+                </button>
+              </div>
+
+              <div className="flex gap-1">
                 <input
                   type="text"
                   disabled={disabled}
-                  placeholder="Paste YouTube link (https://...)"
+                  placeholder="YouTube URL (https://...)"
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAddUrl()}
-                  onBlur={handleAddUrl}
-                  className="flex-1 px-2.5 py-1 text-xs bg-[#0d1117] border border-[#30363d] focus:border-[#58a6ff] rounded text-[#f0f6fc] placeholder-[#6e7681] outline-none"
+                  className="flex-1 px-2 py-1 bg-[#1a1a1a] border border-[#383838] focus:border-[#666666] rounded text-[#e6e6e6] text-[11px] outline-none"
                 />
                 <button
                   type="button"
                   disabled={disabled || !urlInput.trim()}
                   onClick={handleAddUrl}
-                  className="px-2.5 py-1 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#c9d1d9] rounded flex items-center gap-1"
+                  className="px-2.5 py-1 bg-[#2d2d2d] hover:bg-[#383838] border border-[#404040] text-[#cccccc] rounded text-[10px]"
                 >
-                  <Plus className="w-3 h-3" /> Add
+                  Add
                 </button>
               </div>
 
               {config.youtubeUrls.length > 0 && (
-                <div className="flex flex-col gap-1 max-h-24 overflow-y-auto mt-0.5">
-                  {config.youtubeUrls.map((url, index) => (
+                <div className="flex flex-col gap-1 max-h-20 overflow-y-auto mt-0.5">
+                  {config.youtubeUrls.map((url, i) => (
                     <div
-                      key={index}
-                      className="flex items-center justify-between px-2 py-1 bg-[#0d1117] border border-[#21262d] rounded text-[10px] font-mono text-[#c9d1d9]"
+                      key={i}
+                      className="flex items-center justify-between px-2 py-0.5 bg-[#1a1a1a] border border-[#2b2b2b] rounded text-[10px] font-mono text-[#b0b0b0]"
                     >
-                      <span className="truncate max-w-[220px]">{url}</span>
+                      <span className="truncate max-w-[210px]">{url}</span>
                       <button
                         type="button"
-                        onClick={() => handleRemoveUrl(index)}
-                        className="text-[#6e7681] hover:text-[#f85149]"
+                        onClick={() => handleRemoveUrl(i)}
+                        className="text-[#707070] hover:text-white px-1"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        Remove
                       </button>
                     </div>
                   ))}
@@ -230,35 +238,33 @@ export const ProjectBin: React.FC<ProjectBinProps> = ({
               )}
             </div>
 
-            {/* Custom Images Folder */}
-            <div className="flex items-center justify-between pt-2 border-t border-[#21262d]">
-              <span className="text-[11px] font-mono text-[#8b949e] flex items-center gap-1.5">
-                <Image className="w-3.5 h-3.5 text-[#8b949e]" />
-                Image Folder (Optional)
+            {/* 5. Custom Images Folder */}
+            <div className="flex items-center justify-between pt-1 border-t border-[#2b2b2b] text-[11px]">
+              <span className="text-[#808080]">
+                Additional Images Folder
               </span>
               <button
                 type="button"
-                disabled={disabled}
                 onClick={onPickImagesDir}
-                className="px-2 py-0.5 text-[10px] font-mono bg-[#0d1117] hover:bg-[#21262d] border border-[#30363d] text-[#c9d1d9] rounded"
+                className="px-2 py-0.5 bg-[#2d2d2d] hover:bg-[#383838] border border-[#383838] text-[10px] font-mono text-[#b0b0b0] rounded"
               >
-                {config.imagesDir ? getFileName(config.imagesDir) : 'Select...'}
+                {config.imagesDir ? getFileName(config.imagesDir) : 'Browse'}
               </button>
             </div>
           </div>
         )}
 
-        {/* TAB 2: PACING & INTERLEAVING */}
+        {/* TAB 2: PACING (SETTINGS) */}
         {activeTab === 'settings' && (
-          <div className="flex flex-col gap-3 text-xs">
-            {/* Ratio Slider */}
-            <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-3">
+            {/* Video vs Image Ratio */}
+            <div className="flex flex-col gap-1.5 p-2 bg-[#242424] border border-[#303030] rounded">
               <div className="flex items-center justify-between text-xs font-mono">
-                <span className="text-[#58a6ff] flex items-center gap-1">
-                  <Film className="w-3.5 h-3.5" /> Video: {settings.videoRatio}%
+                <span className="text-[#e6e6e6]">
+                  Video: {settings.videoRatio}%
                 </span>
-                <span className="text-[#3fb950] flex items-center gap-1">
-                  <Image className="w-3.5 h-3.5" /> Image: {100 - settings.videoRatio}%
+                <span className="text-[#a0a0a0]">
+                  Images: {100 - settings.videoRatio}%
                 </span>
               </div>
               <input
@@ -266,30 +272,29 @@ export const ProjectBin: React.FC<ProjectBinProps> = ({
                 min="0"
                 max="100"
                 step="5"
-                disabled={disabled}
                 value={settings.videoRatio}
                 onChange={(e) => onSettingsChange({ ...settings, videoRatio: parseInt(e.target.value, 10) })}
-                className="w-full h-1.5 bg-[#0d1117] rounded appearance-none cursor-pointer accent-[#58a6ff]"
+                className="w-full h-1.5 bg-[#141414] rounded appearance-none cursor-pointer accent-[#888888]"
               />
             </div>
 
-            {/* Pattern */}
-            <div className="flex flex-col gap-1 pt-2 border-t border-[#21262d]">
-              <label className="text-[11px] font-mono text-[#8b949e]">Interleaving Rhythm</label>
-              <div className="grid grid-cols-3 gap-1.5">
+            {/* Interleaving Mode */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] text-[#909090]">Interleaving Pattern</label>
+              <div className="grid grid-cols-3 gap-1">
                 {[
-                  { id: 'ratio', label: 'Ratio-based' },
-                  { id: 'alternate', label: '1 Video - 1 Img' },
+                  { id: 'ratio', label: 'Ratio' },
+                  { id: 'alternate', label: 'Alternate' },
                   { id: 'random', label: 'Random' },
                 ].map((mode) => (
                   <button
                     key={mode.id}
                     type="button"
                     onClick={() => onSettingsChange({ ...settings, pattern: mode.id as any })}
-                    className={`py-1 px-1.5 text-[10px] font-mono rounded border text-center transition-all ${
+                    className={`py-1 text-[11px] rounded border text-center transition-all ${
                       settings.pattern === mode.id
-                        ? 'bg-[#1f242c] border-[#58a6ff] text-[#f0f6fc]'
-                        : 'bg-[#0d1117] border-[#30363d] text-[#8b949e] hover:text-[#c9d1d9]'
+                        ? 'bg-[#333333] border-[#666666] text-white font-medium'
+                        : 'bg-[#242424] border-[#383838] text-[#808080] hover:text-[#cccccc]'
                     }`}
                   >
                     {mode.label}
@@ -298,12 +303,10 @@ export const ProjectBin: React.FC<ProjectBinProps> = ({
               </div>
             </div>
 
-            {/* Scene Duration & Sequence FPS */}
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#21262d]">
+            {/* Scene duration & FPS */}
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#2b2b2b]">
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-mono text-[#8b949e] flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> Scene Dur (s)
-                </label>
+                <label className="text-[10px] text-[#808080]">Scene Duration (s)</label>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
@@ -312,9 +315,9 @@ export const ProjectBin: React.FC<ProjectBinProps> = ({
                     step="0.5"
                     value={settings.minSceneDuration}
                     onChange={(e) => onSettingsChange({ ...settings, minSceneDuration: parseFloat(e.target.value) || 2.5 })}
-                    className="w-12 px-1.5 py-0.5 bg-[#0d1117] border border-[#30363d] rounded text-center text-xs font-mono text-[#c9d1d9]"
+                    className="w-12 px-1 py-0.5 bg-[#1a1a1a] border border-[#383838] rounded text-center text-xs font-mono text-[#e6e6e6]"
                   />
-                  <span className="text-[10px] text-[#6e7681]">-</span>
+                  <span className="text-[#666666]">-</span>
                   <input
                     type="number"
                     min="2"
@@ -322,24 +325,20 @@ export const ProjectBin: React.FC<ProjectBinProps> = ({
                     step="0.5"
                     value={settings.maxSceneDuration}
                     onChange={(e) => onSettingsChange({ ...settings, maxSceneDuration: parseFloat(e.target.value) || 6.0 })}
-                    className="w-12 px-1.5 py-0.5 bg-[#0d1117] border border-[#30363d] rounded text-center text-xs font-mono text-[#c9d1d9]"
+                    className="w-12 px-1 py-0.5 bg-[#1a1a1a] border border-[#383838] rounded text-center text-xs font-mono text-[#e6e6e6]"
                   />
                 </div>
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-mono text-[#8b949e] flex items-center gap-1">
-                  <Gauge className="w-3 h-3" /> Timeline FPS
-                </label>
+                <label className="text-[10px] text-[#808080]">Frame Rate (FPS)</label>
                 <select
                   value={settings.fps}
                   onChange={(e) => onSettingsChange({ ...settings, fps: parseFloat(e.target.value) })}
-                  className="px-1.5 py-0.5 bg-[#0d1117] border border-[#30363d] rounded text-xs font-mono text-[#c9d1d9]"
+                  className="px-1.5 py-0.5 bg-[#1a1a1a] border border-[#383838] rounded text-xs font-mono text-[#e6e6e6]"
                 >
-                  <option value="23.976">23.976 fps</option>
                   <option value="24">24 fps</option>
                   <option value="25">25 fps</option>
-                  <option value="29.97">29.97 fps</option>
                   <option value="30">30 fps</option>
                   <option value="60">60 fps</option>
                 </select>
@@ -348,12 +347,12 @@ export const ProjectBin: React.FC<ProjectBinProps> = ({
           </div>
         )}
 
-        {/* TAB 3: SCRIPT INSPECTOR */}
-        {activeTab === 'inspector' && (
+        {/* TAB 3: SCRIPT */}
+        {activeTab === 'script' && (
           <div className="flex flex-col gap-1.5">
             {segments.length === 0 ? (
-              <div className="text-center py-8 text-[#6e7681] text-xs">
-                No scenes aligned yet. Click "Export Premiere XML" to generate scene segments.
+              <div className="text-center py-8 text-[#666666] text-xs">
+                No scenes yet. Click "Export XML" to align script and generate timeline.
               </div>
             ) : (
               segments.map((seg) => {
@@ -364,14 +363,14 @@ export const ProjectBin: React.FC<ProjectBinProps> = ({
                     onClick={() => onSelectSegmentTime(seg.startTime)}
                     className={`p-2 rounded border cursor-pointer transition-colors text-xs ${
                       isActive
-                        ? 'bg-[#1f242c] border-[#58a6ff] text-[#f0f6fc]'
-                        : 'bg-[#0d1117] border-[#21262d] text-[#8b949e] hover:bg-[#161b22] hover:text-[#c9d1d9]'
+                        ? 'bg-[#303030] border-[#666666] text-white'
+                        : 'bg-[#262626] border-[#303030] text-[#999999] hover:text-[#cccccc]'
                     }`}
                   >
-                    <div className="flex items-center justify-between text-[10px] font-mono text-[#6e7681] mb-1">
-                      <span>#{seg.id} ({seg.duration.toFixed(2)}s)</span>
-                      <span className={seg.assetType === 'video' ? 'text-[#58a6ff]' : 'text-[#3fb950]'}>
-                        [{seg.assetType.toUpperCase()}]
+                    <div className="flex items-center justify-between text-[10px] font-mono mb-1">
+                      <span className="text-[#707070]">Scene #{seg.id} ({seg.duration.toFixed(1)}s)</span>
+                      <span className="text-[#cccccc] font-medium">
+                        [{seg.assetType === 'video' ? 'VIDEO' : 'IMAGE'}]
                       </span>
                     </div>
                     <p className="line-clamp-2 leading-relaxed">{seg.text}</p>

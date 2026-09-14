@@ -2,56 +2,127 @@
 
 @layer base {
   :root {
-    /* Modern GitHub Dark Theme Palette */
-    --color-canvas-default: #0d1117;
-    --color-canvas-subtle: #161b22;
-    --color-canvas-overlay: #1c2128;
-    --color-border-default: #30363d;
-    --color-border-muted: #21262d;
-    --color-fg-default: #f0f6fc;
-    --color-fg-muted: #8b949e;
-    --color-fg-subtle: #6e7681;
-    --color-accent-fg: #58a6ff;
-    --color-success-fg: #3fb950;
-    --color-btn-primary-bg: #238636;
-    --color-btn-primary-hover-bg: #2ea043;
-    --color-btn-primary-border: rgba(240, 246, 252, 0.1);
+    /* Adobe Premiere Pro CC Authentic Color Palette */
+    --pr-bg-darkest: #121212;
+    --pr-bg-app: #1a1a1a;
+    --pr-bg-panel: #232323;
+    --pr-bg-panel-header: #2a2a2a;
+    --pr-bg-panel-tab-active: #323232;
+    --pr-border-subtle: #2f2f2f;
+    --pr-border-default: #383838;
+    --pr-border-highlight: #1473e6;
+    
+    --pr-accent-blue: #1473e6;
+    --pr-accent-blue-hover: #2680eb;
+    --pr-timecode-cyan: #26b5ff;
+    
+    --pr-clip-video-bg: #405770;
+    --pr-clip-video-border: #567394;
+    --pr-clip-audio-bg: #325c50;
+    --pr-clip-audio-border: #427868;
+    --pr-clip-image-bg: #6b4759;
+    --pr-clip-image-border: #8c5d75;
+    
+    --pr-text-primary: #e6e6e6;
+    --pr-text-secondary: #b0b0b0;
+    --pr-text-muted: #757575;
   }
 
-  * {
+  *,
+  *::before,
+  *::after {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  *:focus,
+  *:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  button, input, textarea, select {
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
-    background-color: var(--color-canvas-default);
-    color: var(--color-fg-default);
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--pr-bg-darkest);
+    color: var(--pr-text-primary);
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     letter-spacing: -0.01em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     user-select: none;
-    overflow-x: hidden;
+    overflow: hidden;
   }
 
-  code, pre, .font-mono {
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  code, pre, .font-mono, .pr-timecode {
+    font-family: 'JetBrains Mono', Consolas, Menlo, monospace !important;
   }
 
-  /* Sleek GitHub Dark Scrollbar */
+  /* Adobe Premiere Pro Custom Slim Scrollbar */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
   ::-webkit-scrollbar-track {
-    background: #0d1117;
+    background: #1e1e1e;
   }
   ::-webkit-scrollbar-thumb {
-    background: #30363d;
-    border-radius: 4px;
+    background: #3e3e3e;
+    border-radius: 2px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #484f58;
+    background: #555555;
+  }
+
+  /* Custom Dark NLE Range Slider - Fixed Size (No Zoom/Scaling) */
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+    width: 100%;
+    height: 20px;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    background: #2e2e2e;
+    height: 4px;
+    border-radius: 2px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 14px;
+    width: 14px;
+    background: #cccccc;
+    border: 1px solid #ffffff;
+    border-radius: 50%;
+    margin-top: -5px;
+    transition: background-color 0.15s ease;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover {
+    background: #ffffff;
+  }
+  input[type="range"]::-moz-range-track {
+    background: #2e2e2e;
+    height: 4px;
+    border-radius: 2px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    height: 14px;
+    width: 14px;
+    background: #cccccc;
+    border: 1px solid #ffffff;
+    border-radius: 50%;
+    transition: background-color 0.15s ease;
+  }
+  input[type="range"]::-moz-range-thumb:hover {
+    background: #ffffff;
   }
 }
+

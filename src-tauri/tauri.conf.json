@@ -13,13 +13,22 @@
     "windows": [
       {
         "title": "SyncCut - AI Video Aligner & Premiere XML Generator",
-        "width": 1280,
-        "height": 840,
+        "width": 1400,
+        "height": 860,
         "minWidth": 1024,
-        "minHeight": 700
+        "minHeight": 640,
+        "center": true,
+        "maximized": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "**"
+        ]
+      },
       "csp": null
     }
   },
