@@ -1,52 +1,54 @@
-# SyncCut - AI Video Aligner & Premiere XML Generator
+# SyncCut
 
-**SyncCut** is a lightweight, high-performance desktop application built with **Tauri v2 + React 19 + TypeScript + Tailwind CSS** designed for automated video pre-production and editing.
+High-performance desktop utility for automated speech-to-video alignment and NLE timeline sequence generation (Final Cut Pro 7 / Premiere Pro XML). Built on Tauri v2, Rust, and React.
 
-It downloads YouTube B-roll footage, ingests voiceover files (`.mp4`, `.wav`) and script text (`.txt`), performs AI Forced Alignment to map spoken timestamps down to the millisecond, distributes video and image assets according to user-configurable interleaving ratios, and exports an Apple Final Cut Pro 7 / Adobe Premiere Pro XML (`<xmeml version="4">`) sequence ready for instant post-production.
+## Overview
 
----
+SyncCut automates the pre-editing pipeline by synchronizing voiceover tracks with script segments down to millisecond accuracy, matching visual footage, and exporting production-ready timeline sequences directly into NLE software (Adobe Premiere Pro, DaVinci Resolve, Final Cut Pro) without manual timeline slicing or transcodes.
 
-## Key Features
+## Architecture
 
-- **⚡ 1-Click Load Demo**: Instantly loads sample voiceover, script, and B-roll footage to test the full pipeline in seconds.
-- **🎙️ AI Forced Alignment Engine**: Uses Whisper / Faster-Whisper with Ground Truth script matching to prevent spelling mistakes and ensure zero audio drift.
-- **🎬 Smart Interleaving Controller**:
-  - Configurable Video B-roll vs Static Image ratio (0% to 100%).
-  - Pattern modes: *Weighted Ratio*, *Strict Alternate (1-1)*, *Random Mix*.
-  - Minimum and Maximum scene duration pacing controls.
-- **📁 Adobe Premiere Pro XML (XMEML v4) Export**:
-  - Generates synchronized Video Track 1 and Audio Track 1 with frame-accurate In/Out/Start/End points.
-  - Native file path resolution for seamless zero-offline-media opening in Adobe Premiere CC.
-- **🎨 Modern GitHub Dark Aesthetic**: Clean, solid dark theme with subtle ash-gray borders, Plus Jakarta Sans typography, and zero distracting glow effects.
+1. **Asset Management & Media Pool**: Local file indexing and native asset protocol streaming via Tauri v2 (`assetProtocol: scope: ["**"]`) with zero background HTTP server overhead.
+2. **Integrated Media Retrieval**: Embedded `yt-dlp` wrapper supporting video format queries, real-time download streaming metrics, and direct output folder routing.
+3. **Alignment Engine**: Speech segmentation and millisecond-accurate timestamp extraction using local Whisper models and Python alignment scripts against ground-truth text.
+4. **Timeline Serializer**: Standard-compliant Final Cut Pro 7 XML (`<xmeml version="4">`) export with frame-accurate In/Out/Start/End points and absolute media path resolution.
 
----
+## Technology Stack
 
-## Development & Build Guide
+- **Runtime**: Tauri v2 (Rust)
+- **Frontend**: React 19, TypeScript, Vite
+- **Styling**: Tailwind CSS (strict monochrome neutral design system)
+- **Media Dependencies**: FFmpeg, FFprobe, yt-dlp
 
-### Prerequisites
-- [Node.js](https://nodejs.org/) (v18+)
-- [Rust](https://www.rust-lang.org/) (Cargo 1.80+)
-- [FFmpeg](https://ffmpeg.org/) (installed and in PATH)
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) (installed and in PATH)
-- Python 3.9+
+## Prerequisites
 
-### Quick Start (Dev Mode)
+- Node.js >= 18.x
+- Rust toolchain (Cargo stable >= 1.80)
+- `ffmpeg` and `yt-dlp` available in PATH or project `bin/` directory
+- Windows 10/11 (x64)
+
+## Installation & Development
+
 ```bash
 # Install frontend dependencies
 npm install
 
-# Run Desktop Dev App with Hot Module Reloading
+# Launch development build with hot reload
 npm run tauri dev
 ```
 
-### Production Build (Windows Standalone .exe / .msi)
+## Production Build
+
 ```bash
-# Build desktop production executable
+# Compile optimized native binary and installer bundles
 npm run tauri build
 ```
-The compiled installer will be generated in `src-tauri/target/release/bundle/`.
 
----
+Compiled artifacts will be located under `src-tauri/target/release/bundle/`:
+- Standalone Binary: `src-tauri/target/release/tauri-app.exe`
+- NSIS Installer: `src-tauri/target/release/bundle/nsis/SyncCut_0.1.0_x64-setup.exe`
+- MSI Package: `src-tauri/target/release/bundle/msi/SyncCut_0.1.0_x64_en-US.msi`
 
 ## License
+
 MIT License
