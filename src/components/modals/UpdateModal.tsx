@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../i18n';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 interface UpdateModalProps {
   isOpen: boolean;
@@ -22,8 +23,14 @@ interface GitHubRelease {
   assets?: ReleaseAsset[];
 }
 
-const CURRENT_VERSION = '0.1.0';
-const GITHUB_REPO = 'pecora31/prototype-VAE';
+interface UpdateProgressPayload {
+  downloaded: number;
+  total: number;
+  percent: number;
+  status: 'downloading' | 'installing';
+}
+
+const GITHUB_REPO = 'pecora31/SyncCut';
 const RELEASES_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 const RELEASES_WEB_URL = `https://github.com/${GITHUB_REPO}/releases`;
 
@@ -49,15 +56,69 @@ function formatBytes(bytes: number): string {
 
 export const UpdateModal: React.FC<UpdateModalProps> = ({ isOpen, onClose }) => {
   const { language } = useLanguage();
+  const [currentVersion, setCurrentVersion] = useState<string>('0.1.3');
   const [status, setStatus] = useState<'checking' | 'up-to-date' | 'available' | 'no-release' | 'error'>('checking');
   const [latestRelease, setLatestRelease] = useState<GitHubRelease | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [lastCheckedTime, setLastCheckedTime] = useState<string>('');
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [updateStepText, setUpdateStepText] = useState<string>('');
+  const [downloadProgress, setDownloadProgress] = useState<UpdateProgressPayload | null>(null);
+
+  // Fetch current version dynamically from Tauri
+  useEffect(() => {
+    invoke<string>('get_app_version')
+      .then((ver) => {
+        if (ver) setCurrentVersion(ver);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Listen to background download progress events
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<UpdateProgressPayload>('update-download-progress', (event) => {
+      setDownloadProgress(event.payload);
+      if (event.payload.status === 'installing') {
+        setUpdateStepText(
+          language === 'vi'
+            ? 'Đang tự động cài đặt và khởi động lại SyncCut...'
+            : 'Installing update and restarting SyncCut...'
+        );
+      } else {
+        const cur = formatBytes(event.payload.downloaded);
+        const tot = formatBytes(event.payload.total);
+        const pct = Math.round(event.payload.percent);
+        setUpdateStepText(
+          language === 'vi'
+            ? `Đang tải: ${cur} / ${tot} (${pct}%)`
+            : `Downloading: ${cur} / ${tot} (${pct}%)`
+        );
+      }
+    })
+      .then((u) => {
+        unlisten = u;
+      })
+      .catch((err) => {
+        console.warn('Could not listen to update-download-progress:', err);
+      });
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [language]);
 
   const checkForUpdates = async () => {
     setStatus('checking');
     setErrorMessage('');
+    setIsUpdating(false);
+    setUpdateStepText('');
+    setDownloadProgress(null);
+
     try {
+      const ver = await invoke<string>('get_app_version').catch(() => currentVersion);
+      if (ver) setCurrentVersion(ver);
+
       const res = await fetch(RELEASES_API_URL, {
         headers: {
           Accept: 'application/vnd.github.v3+json',
@@ -80,7 +141,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ isOpen, onClose }) => 
       const data: GitHubRelease = await res.json();
       setLatestRelease(data);
 
-      const isNewer = compareVersions(data.tag_name, CURRENT_VERSION) > 0;
+      const isNewer = compareVersions(data.tag_name, ver || currentVersion) > 0;
       if (isNewer) {
         setStatus('available');
       } else {
@@ -110,8 +171,59 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ isOpen, onClose }) => 
     }
   };
 
+  const handleAutoUpdate = async () => {
+    if (!latestRelease || isUpdating) return;
+
+    // Find the Windows setup installer (.exe)
+    const installerAsset = latestRelease.assets?.find(
+      (a) => a.name.toLowerCase().endsWith('-setup.exe') || a.name.toLowerCase().endsWith('.exe')
+    );
+
+    if (!installerAsset) {
+      handleOpenUrl(latestRelease.html_url);
+      return;
+    }
+
+    setIsUpdating(true);
+    setDownloadProgress({
+      downloaded: 0,
+      total: installerAsset.size,
+      percent: 0,
+      status: 'downloading',
+    });
+    setUpdateStepText(
+      language === 'vi'
+        ? `Bắt đầu tải ${installerAsset.name} (${formatBytes(installerAsset.size)})...`
+        : `Starting download of ${installerAsset.name} (${formatBytes(installerAsset.size)})...`
+    );
+
+    try {
+      await invoke('download_and_install_update', {
+        downloadUrl: installerAsset.browser_download_url,
+        totalBytes: installerAsset.size,
+      });
+
+      setUpdateStepText(
+        language === 'vi'
+          ? 'Đang khởi chạy bộ cài đặt và khởi động lại SyncCut...'
+          : 'Launching installer and relaunching SyncCut...'
+      );
+    } catch (err: any) {
+      console.error('Auto update error:', err);
+      setIsUpdating(false);
+      setDownloadProgress(null);
+      const msg = typeof err === 'string' ? err : err?.message || 'Automatic update failed';
+      setErrorMessage(msg);
+      setStatus('error');
+    }
+  };
+
+  const installerAsset = latestRelease?.assets?.find(
+    (a) => a.name.toLowerCase().endsWith('-setup.exe') || a.name.toLowerCase().endsWith('.exe')
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 select-none p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 select-none p-4 font-sans">
       <div className="w-full max-w-lg bg-[#1a1a1a] border border-[#333333] rounded shadow-2xl flex flex-col overflow-hidden text-xs">
         {/* Header */}
         <div className="h-10 px-4 bg-[#222222] border-b border-[#2e2e2e] flex items-center justify-between">
@@ -120,8 +232,9 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ isOpen, onClose }) => 
           </span>
           <button
             type="button"
+            disabled={isUpdating}
             onClick={onClose}
-            className="text-[#888888] hover:text-white px-2 py-0.5 rounded hover:bg-[#333333] transition-colors cursor-pointer"
+            className="text-[#888888] hover:text-white px-2 py-0.5 rounded hover:bg-[#333333] transition-colors cursor-pointer disabled:opacity-40"
           >
             {language === 'vi' ? 'Đóng' : 'Close'}
           </button>
@@ -135,7 +248,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ isOpen, onClose }) => 
               <span className="text-[#888888]">
                 {language === 'vi' ? 'Bản hiện tại: ' : 'Installed Version: '}
               </span>
-              <span className="text-white font-bold ml-1">v{CURRENT_VERSION}</span>
+              <span className="text-white font-bold ml-1">v{currentVersion}</span>
             </div>
             {lastCheckedTime && (
               <div className="text-[#666666]">
@@ -163,7 +276,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ isOpen, onClose }) => 
                 {language === 'vi' ? 'Bạn đang sử dụng phiên bản mới nhất' : 'SyncCut is up to date'}
               </span>
               <span className="text-[#888888] font-mono text-[11px]">
-                v{CURRENT_VERSION}
+                v{currentVersion}
               </span>
               <button
                 type="button"
@@ -203,49 +316,62 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ isOpen, onClose }) => 
                   <span className="text-[#777777] font-mono text-[10px]">
                     {language === 'vi' ? 'Chi tiết bản cập nhật:' : 'Changelog / Release Notes:'}
                   </span>
-                  <div className="bg-[#0e0e0e] border border-[#222222] rounded p-2 text-[#aaaaaa] font-mono text-[10.5px] max-h-36 overflow-y-auto whitespace-pre-wrap select-text">
+                  <div className="bg-[#0e0e0e] border border-[#222222] rounded p-2 text-[#aaaaaa] font-mono text-[10.5px] max-h-32 overflow-y-auto whitespace-pre-wrap select-text">
                     {latestRelease.body}
                   </div>
                 </div>
               )}
 
-              {/* Assets list if available */}
-              {latestRelease.assets && latestRelease.assets.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-[#777777] font-mono text-[10px]">
-                    {language === 'vi' ? 'Gói cài đặt:' : 'Installers & Assets:'}
-                  </span>
-                  <div className="flex flex-col gap-1">
-                    {latestRelease.assets.map((asset) => (
-                      <div
-                        key={asset.name}
-                        className="flex items-center justify-between bg-[#1b1b1b] px-2 py-1 rounded border border-[#2d2d2d] font-mono text-[10px]"
-                      >
-                        <span className="text-[#cccccc] truncate">{asset.name}</span>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-[#777777]">{formatBytes(asset.size)}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenUrl(asset.browser_download_url)}
-                            className="px-2 py-0.5 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-white rounded transition-colors cursor-pointer"
-                          >
-                            {language === 'vi' ? 'Tải về' : 'Download'}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+              {/* Update Progress Indicator */}
+              {isUpdating && (
+                <div className="flex flex-col gap-2 p-3 bg-[#111111] border border-[#444444] rounded">
+                  <div className="flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-white font-medium">
+                      {updateStepText || (language === 'vi' ? 'Đang thực hiện cập nhật...' : 'Updating SyncCut...')}
+                    </span>
+                    {downloadProgress && downloadProgress.percent > 0 && (
+                      <span className="text-white font-bold">
+                        {Math.round(downloadProgress.percent)}%
+                      </span>
+                    )}
+                  </div>
+                  <div className="h-2 bg-[#222222] rounded overflow-hidden border border-[#333333]">
+                    <div
+                      className="h-full bg-white transition-all duration-200"
+                      style={{ width: `${Math.max(4, Math.min(100, downloadProgress?.percent || 4))}%` }}
+                    />
+                  </div>
+                  <div className="text-[10px] font-mono text-[#888888]">
+                    {language === 'vi'
+                      ? 'SyncCut sẽ tự động cập nhật và khởi động lại phiên bản mới ngay sau khi tải xong.'
+                      : 'SyncCut will automatically apply the update and relaunch once downloaded.'}
                   </div>
                 </div>
               )}
 
-              {/* Action Button */}
+              {/* Primary Action Button: 1-Click Auto Update & Install */}
               <div className="flex items-center gap-2 mt-1">
                 <button
                   type="button"
-                  onClick={() => handleOpenUrl(latestRelease.html_url)}
-                  className="flex-1 py-1.5 bg-[#333333] hover:bg-[#404040] text-white font-semibold rounded border border-[#555555] transition-colors cursor-pointer text-center"
+                  disabled={isUpdating}
+                  onClick={handleAutoUpdate}
+                  className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-[#383838] active:bg-[#404040] disabled:bg-[#1f1f1f] text-white font-semibold rounded border border-[#555555] disabled:border-[#333333] transition-colors cursor-pointer text-center text-xs"
                 >
-                  {language === 'vi' ? 'Mở trang tải bản cập nhật' : 'Download Update on GitHub'}
+                  {isUpdating
+                    ? (language === 'vi' ? 'Đang tự động xử lý...' : 'Updating...')
+                    : (language === 'vi'
+                      ? `Tự động cập nhật & Khởi động lại (${installerAsset ? formatBytes(installerAsset.size) : 'Bản mới'})`
+                      : `Update & Restart (${installerAsset ? formatBytes(installerAsset.size) : 'New Build'})`)}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isUpdating}
+                  onClick={() => handleOpenUrl(latestRelease.html_url)}
+                  className="px-3 py-2.5 bg-[#202020] hover:bg-[#282828] text-[#888888] hover:text-white border border-[#333333] rounded transition-colors cursor-pointer text-center text-xs"
+                  title="View on GitHub"
+                >
+                  {language === 'vi' ? 'Xem trên Web' : 'View on Web'}
                 </button>
               </div>
             </div>
@@ -258,8 +384,8 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ isOpen, onClose }) => 
               </div>
               <p className="text-[#999999] text-[11px] leading-relaxed">
                 {language === 'vi'
-                  ? 'Hiện tại chưa có bản Release build nào được phát hành trên GitHub. Sau khi bạn đẩy mã nguồn lên và tạo Release, ứng dụng sẽ tự động phát hiện và cung cấp bản tải xuống tại đây.'
-                  : 'No release builds have been published on GitHub yet. Once you push the repository and publish a release, the app will automatically detect and download updates here.'}
+                  ? 'Hiện tại chưa có bản Release build nào mới hơn trên GitHub.'
+                  : 'No newer release build is available on GitHub at this time.'}
               </p>
               <div className="flex items-center gap-2 pt-1 font-mono">
                 <button
@@ -267,7 +393,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ isOpen, onClose }) => 
                   onClick={() => handleOpenUrl(RELEASES_WEB_URL)}
                   className="px-3 py-1 bg-[#262626] hover:bg-[#333333] text-white border border-[#3e3e3e] rounded text-[11px] transition-colors cursor-pointer"
                 >
-                  {language === 'vi' ? 'Mở trang GitHub Releases' : 'Open GitHub Releases'}
+                  {language === 'vi' ? 'Mở GitHub Releases' : 'Open GitHub Releases'}
                 </button>
                 <button
                   type="button"
@@ -283,9 +409,9 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ isOpen, onClose }) => 
           {status === 'error' && (
             <div className="flex flex-col gap-2 bg-[#191414] border border-[#382828] p-3 rounded">
               <span className="text-white font-semibold">
-                {language === 'vi' ? 'Không thể kiểm tra cập nhật' : 'Update Check Failed'}
+                {language === 'vi' ? 'Không thể cập nhật tự động' : 'Update Failed'}
               </span>
-              <span className="text-[#888888] text-[11px]">
+              <span className="text-[#ff8888] text-[11px]">
                 {errorMessage || (language === 'vi' ? 'Vui lòng kiểm tra kết nối mạng.' : 'Please check your internet connection.')}
               </span>
               <div className="flex items-center gap-2 pt-1 font-mono">
@@ -301,7 +427,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ isOpen, onClose }) => 
                   onClick={() => handleOpenUrl(RELEASES_WEB_URL)}
                   className="px-3 py-1 bg-[#282828] hover:bg-[#333333] text-[#aaaaaa] hover:text-white border border-[#3e3e3e] rounded text-[11px] transition-colors cursor-pointer"
                 >
-                  {language === 'vi' ? 'Mở GitHub' : 'Open GitHub'}
+                  {language === 'vi' ? 'Tải thủ công từ GitHub' : 'Download Manually from GitHub'}
                 </button>
               </div>
             </div>
@@ -312,8 +438,9 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ isOpen, onClose }) => 
         <div className="h-10 px-4 bg-[#202020] border-t border-[#2e2e2e] flex items-center justify-end">
           <button
             type="button"
+            disabled={isUpdating}
             onClick={onClose}
-            className="px-4 py-1.5 bg-[#333333] hover:bg-[#404040] text-white font-medium rounded transition-colors cursor-pointer"
+            className="px-4 py-1.5 bg-[#333333] hover:bg-[#404040] text-white font-medium rounded transition-colors cursor-pointer disabled:opacity-40"
           >
             {language === 'vi' ? 'Đóng' : 'Close'}
           </button>

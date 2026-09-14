@@ -52,15 +52,50 @@ interface DeletedAssetEntry {
   wasFootagePath?: string;
 }
 
+function compareAppVersions(v1: string, v2: string): number {
+  const clean1 = v1.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const clean2 = v2.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(clean1.length, clean2.length); i++) {
+    const num1 = clean1[i] || 0;
+    const num2 = clean2[i] || 0;
+    if (num1 > num2) return 1;
+    if (num1 < num2) return -1;
+  }
+  return 0;
+}
+
 export const App: React.FC = () => {
   // Workspace Tab: 'pool' (Media Pool) or 'matcher' (AI Storyboard Matcher)
   const [workspaceTab, setWorkspaceTab] = useState<'pool' | 'matcher'>('pool');
   const [isYouTubePopupOpen, setIsYouTubePopupOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isUpdateOpen, setIsUpdateOpen] = useState<boolean>(false);
+  const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [isFirstRunOpen, setIsFirstRunOpen] = useState<boolean>(() => {
     return localStorage.getItem(STORAGE_KEY_FIRST_RUN) !== 'true';
   });
+
+  // Silent background check for updates on startup
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        const currentVer = await invoke<string>('get_app_version').catch(() => '0.1.3');
+        const res = await fetch('https://api.github.com/repos/pecora31/SyncCut/releases/latest', {
+          headers: { Accept: 'application/vnd.github.v3+json' },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.tag_name && compareAppVersions(data.tag_name, currentVer) > 0) {
+            setUpdateAvailable(data.tag_name);
+          }
+        }
+      } catch {
+        // Silently ignore network failures on startup
+      }
+    }, 2500);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleConfirmFirstRun = (folder: string) => {
     setOutputDir(folder);
@@ -646,10 +681,15 @@ export const App: React.FC = () => {
           <button
             type="button"
             onClick={() => setIsUpdateOpen(true)}
-            className="px-3 py-1 bg-[#262626] hover:bg-[#333333] text-white text-xs font-medium rounded border border-[#3e3e3e] transition-colors cursor-pointer"
+            className="px-3 py-1 bg-[#262626] hover:bg-[#333333] text-white text-xs font-medium rounded border border-[#3e3e3e] transition-colors cursor-pointer flex items-center gap-1.5"
             title={language === 'vi' ? 'Kiểm tra cập nhật tự động từ GitHub' : 'Check for Updates'}
           >
-            {language === 'vi' ? 'Cập nhật' : 'Check Update'}
+            <span>{language === 'vi' ? 'Cập nhật' : 'Check Update'}</span>
+            {updateAvailable && (
+              <span className="bg-white text-black text-[10px] px-1 font-bold rounded font-mono">
+                {updateAvailable}
+              </span>
+            )}
           </button>
         </div>
 
@@ -696,6 +736,41 @@ export const App: React.FC = () => {
           </button>
         </div>
       </header>
+
+      {/* Update Notification Banner */}
+      {updateAvailable && (
+        <div className="h-8 bg-[#202020] border-b border-[#3e3e3e] px-4 flex items-center justify-between text-xs font-sans select-none shrink-0 z-20">
+          <div className="flex items-center gap-2">
+            <span className="text-white font-medium">
+              {language === 'vi'
+                ? `Phiên bản mới khả dụng: ${updateAvailable}`
+                : `New version available: ${updateAvailable}`}
+            </span>
+            <span className="text-[#888888] text-[11px] hidden sm:inline">
+              {language === 'vi'
+                ? '— Nhấp để cập nhật tự động và khởi động lại'
+                : '— Click to auto-update and relaunch'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsUpdateOpen(true)}
+              className="px-2.5 py-0.5 bg-white text-black font-semibold rounded hover:bg-[#e0e0e0] transition-colors cursor-pointer text-[11px]"
+            >
+              {language === 'vi' ? 'Cập nhật ngay' : 'Update Now'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setUpdateAvailable(null)}
+              className="text-[#888888] hover:text-white px-1 text-xs cursor-pointer"
+              title="Dismiss"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 2. Clean 2-Pane Workspace & Preview Layout */}
       <main className="flex-1 flex flex-row min-h-0 overflow-hidden">

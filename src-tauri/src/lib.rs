@@ -1857,6 +1857,167 @@ fn scan_workspace_media(custom_dir: Option<String>) -> Vec<PickedAssetInfo> {
     results
 }
 
+#[tauri::command]
+fn get_app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+#[tauri::command]
+async fn download_and_install_update(
+    app: tauri::AppHandle,
+    download_url: String,
+    total_bytes: Option<u64>,
+) -> Result<(), String> {
+    let temp_dir = std::env::temp_dir();
+    let installer_path = temp_dir.join("SyncCut_Update_Setup.exe");
+
+    // Clean up previous leftover installer if present
+    if installer_path.exists() {
+        let _ = fs::remove_file(&installer_path);
+    }
+
+    eprintln!("[SyncCut Update] Starting download from {} to {:?}", download_url, installer_path);
+
+    let installer_for_curl = installer_path.clone();
+    let url_for_curl = download_url.clone();
+
+    // Spawn curl download in a blocking thread
+    let curl_handle = tokio::task::spawn_blocking(move || {
+        let mut cmd = Command::new("curl.exe");
+        cmd.args([
+            "-L",
+            "--retry", "3",
+            "--retry-delay", "2",
+            "-o", &installer_for_curl.to_string_lossy(),
+            &url_for_curl,
+        ]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        cmd.output()
+    });
+
+    // Poll download progress while curl runs
+    let check_path = installer_path.clone();
+    let app_handle = app.clone();
+    let total = total_bytes.unwrap_or(0);
+    let done_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let done_clone = done_flag.clone();
+
+    tokio::spawn(async move {
+        let mut last_size = 0;
+        while !done_clone.load(std::sync::atomic::Ordering::Relaxed) {
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            if let Ok(meta) = fs::metadata(&check_path) {
+                let cur = meta.len();
+                if cur != last_size {
+                    last_size = cur;
+                    let pct = if total > 0 {
+                        ((cur as f64 / total as f64) * 100.0).min(99.0)
+                    } else {
+                        0.0
+                    };
+                    let _ = app_handle.emit(
+                        "update-download-progress",
+                        serde_json::json!({
+                            "downloaded": cur,
+                            "total": total,
+                            "percent": pct,
+                            "status": "downloading"
+                        }),
+                    );
+                }
+            }
+        }
+    });
+
+    let curl_res = curl_handle
+        .await
+        .map_err(|e| format!("Download task panicked: {}", e))?;
+    done_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+
+    let output = curl_res.map_err(|e| format!("Failed to execute download command: {}", e))?;
+    if !output.status.success() || !installer_path.exists() {
+        return Err("Failed to download update installer. Please check your internet connection.".to_string());
+    }
+
+    let file_size = fs::metadata(&installer_path).map(|m| m.len()).unwrap_or(0);
+    if file_size < 1_000_000 {
+        let _ = fs::remove_file(&installer_path);
+        return Err("Downloaded update file is corrupt or incomplete. Please try again.".to_string());
+    }
+
+    // Emit 100% progress and installing status
+    let _ = app.emit(
+        "update-download-progress",
+        serde_json::json!({
+            "downloaded": file_size,
+            "total": if total > 0 { total } else { file_size },
+            "percent": 100.0,
+            "status": "installing"
+        }),
+    );
+
+    eprintln!("[SyncCut Update] Download finished ({} bytes). Launching updater script...", file_size);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        let current_exe = std::env::current_exe().unwrap_or_default();
+        let updater_bat_path = temp_dir.join("synccut_updater.bat");
+
+        // Write detached batch script to wait for SyncCut to exit, install update silently, and relaunch
+        let bat_content = format!(
+            "@echo off\r\n\
+             setlocal\r\n\
+             timeout /t 2 /nobreak >nul\r\n\
+             start \"\" /wait \"{}\" /S\r\n\
+             if %ERRORLEVEL% NEQ 0 (\r\n\
+                 start \"\" /wait \"{}\"\r\n\
+             )\r\n\
+             if exist \"{}\" (\r\n\
+                 start \"\" \"{}\"\r\n\
+             ) else if exist \"%LOCALAPPDATA%\\Programs\\SyncCut\\SyncCut.exe\" (\r\n\
+                 start \"\" \"%LOCALAPPDATA%\\Programs\\SyncCut\\SyncCut.exe\"\r\n\
+             )\r\n\
+             timeout /t 2 /nobreak >nul\r\n\
+             del \"{}\" >nul 2>&1\r\n\
+             del \"%~f0\" >nul 2>&1\r\n",
+            installer_path.display(),
+            installer_path.display(),
+            current_exe.display(),
+            current_exe.display(),
+            installer_path.display()
+        );
+
+        fs::write(&updater_bat_path, bat_content)
+            .map_err(|e| format!("Failed to create updater script: {}", e))?;
+
+        let mut launcher = Command::new("cmd.exe");
+        launcher.args(["/c", &updater_bat_path.to_string_lossy()]);
+        launcher.creation_flags(0x08000000);
+        launcher.spawn().map_err(|e| format!("Failed to launch updater: {}", e))?;
+    }
+
+    #[cfg(not(windows))]
+    {
+        Command::new(&installer_path)
+            .spawn()
+            .map_err(|e| format!("Failed to launch installer: {}", e))?;
+    }
+
+    // Exit current app cleanly so files are unlocked for replacement
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        std::process::exit(0);
+    });
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Startup clean: remove orphaned cache from previous sessions
@@ -1919,7 +2080,9 @@ pub fn run() {
             read_text_snippet,
             scan_workspace_media,
             get_file_media_info,
-            get_batch_files_media_info
+            get_batch_files_media_info,
+            get_app_version,
+            download_and_install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
