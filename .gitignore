@@ -40,3 +40,12 @@ test_out.mp4
 *.njsproj
 *.sln
 *.sw?
+
+# AI Agents and Assistant Rules
+.agents/
+GEMINI.md
+AGENTS.md
+CLAUDE.md
+.cursor/
+.cursorrules
+DESIGN_SYSTEM.md
