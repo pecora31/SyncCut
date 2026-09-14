@@ -834,8 +834,7 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
         {/* SLOT 4: PIPELINE ACTION */}
         {/* ======================================================== */}
         <div className="flex flex-col min-w-0">
-          <div className="flex items-center justify-between text-[10px] font-mono text-[#888888] font-bold mb-1 px-0.5">
-            <span>4. ACTION</span>
+          <div className="flex items-center justify-end text-[10px] font-mono text-[#888888] font-bold mb-1 px-0.5 h-[15px]">
             {isAnalyzing && (
               <span className="text-[9px] text-[#aaaaaa] animate-pulse">Running...</span>
             )}
