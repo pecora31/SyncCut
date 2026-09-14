@@ -400,8 +400,6 @@ export const App: React.FC = () => {
                   setPreviewAsset(firstVideo);
                   setActiveFootagePath(firstVideo.path);
                 }
-
-                setExportMessage(`Imported ${newAssets.length} file(s) into Media Pool`);
               }
             } catch (err) {
               console.error('Failed to parse dropped files:', err);
@@ -787,15 +785,12 @@ export const App: React.FC = () => {
             if (unmountSlot === 'voice') {
               e.preventDefault();
               setActiveVoicePath('');
-              setExportMessage('Voiceover unmounted');
             } else if (unmountSlot === 'script') {
               e.preventDefault();
               setActiveScriptPath('');
-              setExportMessage('Script unmounted');
             } else if (unmountSlot === 'footage' || unmountSlot === 'video') {
               e.preventDefault();
               handleClearPreview();
-              setExportMessage('Footage preview unmounted');
             }
           }}
         >
@@ -1003,7 +998,6 @@ export const App: React.FC = () => {
             return cleanDeduplicateAssets([...updated, absAsset]);
           });
           setIsYouTubePopupOpen(false);
-          setExportMessage(`Downloaded: ${absAsset.name}`);
         }}
       />
 

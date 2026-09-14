@@ -558,7 +558,6 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
                 const asset = parseDroppedAsset(e);
                 if (asset && isScriptAsset(asset)) {
                   onSelectScript(asset.path);
-                  setStatusText(`Script mounted: ${asset.name}`);
                 }
               }}
               className={`h-[76px] border border-dashed rounded flex items-center justify-center transition-colors cursor-pointer group select-none ${
@@ -636,7 +635,6 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
                 type="button"
                 onClick={() => {
                   handleSelectFootage('');
-                  setStatusText('Footage preview cleared');
                 }}
                 className="text-[8.5px] font-mono text-[#888888] hover:text-white transition-colors cursor-pointer"
                 title="Clear footage"
@@ -669,7 +667,6 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
                 const asset = parseDroppedAsset(e);
                 if (asset && (isVideoAsset(asset) || asset.fileType === 'image')) {
                   handleSelectFootage(asset.path);
-                  setStatusText(`Footage preview: ${asset.name}`);
                 }
               }}
               onMouseDown={(e) => {
@@ -691,7 +688,6 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
                   if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
                     handleSelectFootage('');
                     onClearPreview?.();
-                    setStatusText('Footage preview unmounted');
                   }
                 }
               }}
