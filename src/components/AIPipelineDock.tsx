@@ -74,7 +74,7 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
   hoverDropZone,
 }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [_statusText, setStatusText] = useState<string | null>(null);
+  const [statusText, setStatusText] = useState<string | null>(null);
   const [dragTarget, setDragTarget] = useState<'voice' | 'script' | 'footage' | 'dock' | null>(null);
   const [holdingSlot, setHoldingSlot] = useState<'voice' | 'script' | 'footage' | null>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -253,14 +253,24 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
   };
 
   const handleRunAIAnalysis = async () => {
-    if (!canRun || isAnalyzing) return;
+    if (!canRun) {
+      if (!activeVoicePath && !activeScriptPath) {
+        setStatusText('Please select Voiceover (Slot 1) and Script (Slot 2) first');
+      } else if (!activeVoicePath) {
+        setStatusText('Please select Voiceover audio in Slot 1');
+      } else {
+        setStatusText('Please select Script text in Slot 2');
+      }
+      return;
+    }
+    if (isAnalyzing) return;
 
     setIsAnalyzing(true);
-    setStatusText('Analyzing speech & aligning footage...');
+    setStatusText('Analyzing speech timestamps & aligning scenes...');
 
     try {
       const brollPaths = videoAssets.map((a) => a.path);
-      const outDir = outputDir || './output';
+      const outDir = outputDir || './media_pool';
 
       const result = await invoke<SentenceSegment[]>('execute_voice_visual_matching', {
         voicePath: activeVoicePath,
@@ -269,11 +279,16 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
         outputDir: outDir,
       });
 
+      if (!result || result.length === 0) {
+        throw new Error('No scenes could be aligned from the provided script and audio.');
+      }
+
       onSegmentsMatched(result);
-      setStatusText(`${result.length} scenes synchronized`);
+      setStatusText(`Successfully aligned ${result.length} scene segments`);
     } catch (err: any) {
       console.error('AI Pipeline execution error:', err);
-      setStatusText(err?.toString() || 'Analysis failed');
+      const errStr = typeof err === 'string' ? err : (err?.message || 'Analysis failed. Please check inputs.');
+      setStatusText(`Error: ${errStr}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -819,23 +834,72 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
         {/* SLOT 4: PIPELINE ACTION */}
         {/* ======================================================== */}
         <div className="flex flex-col min-w-0">
-          {/* Spacer to align with slots 1, 2, 3 */}
-          <div className="h-[15px] mb-1" />
+          <div className="flex items-center justify-between text-[10px] font-mono text-[#888888] font-bold mb-1 px-0.5">
+            <span>4. ACTION</span>
+            {isAnalyzing && (
+              <span className="text-[9px] text-[#aaaaaa] animate-pulse">Running...</span>
+            )}
+          </div>
 
           {/* Action Trigger Button (Height 76px matching slots) */}
           <button
             type="button"
-            disabled={!canRun || isAnalyzing}
+            disabled={isAnalyzing}
             onClick={handleRunAIAnalysis}
-            className="h-[76px] bg-[#242424] hover:bg-[#303030] active:bg-[#3a3a3a] disabled:bg-[#141414] disabled:text-[#444444] text-white font-mono font-bold text-xs rounded border border-[#383838] disabled:border-[#222222] transition-colors cursor-pointer flex items-center justify-center text-center p-3 select-none"
-            title={canRun ? 'Analyze speech and align video clips to sentences' : 'Mount Voiceover and Script first'}
+            className={`h-[76px] rounded border font-mono transition-colors cursor-pointer flex flex-col items-center justify-center text-center p-2 select-none relative overflow-hidden ${
+              isAnalyzing
+                ? 'bg-[#222222] border-[#444444] text-[#cccccc]'
+                : canRun
+                ? 'bg-[#282828] hover:bg-[#343434] active:bg-[#3e3e3e] border-[#444444] text-white shadow-sm'
+                : 'bg-[#181818] hover:bg-[#202020] border-[#2c2c2c] text-[#777777]'
+            }`}
+            title={canRun ? 'Analyze speech and align video clips to sentences' : 'Click for setup requirements'}
           >
-            <span className="tracking-wider">
-              {isAnalyzing ? 'ANALYZING...' : 'START ANALYSIS'}
-            </span>
+            {isAnalyzing ? (
+              <div className="flex flex-col items-center gap-1">
+                <span className="font-bold tracking-wider text-xs text-white">ANALYZING...</span>
+                <span className="text-[9.5px] text-[#999999]">Aligning scenes & audio</span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-0.5">
+                <span className={`font-bold tracking-wider text-xs ${canRun ? 'text-white' : 'text-[#888888]'}`}>
+                  START ANALYSIS
+                </span>
+                <span className="text-[9px] text-[#777777]">
+                  {canRun ? 'Align scenes & footage' : 'Requires Voice & Script'}
+                </span>
+              </div>
+            )}
+
+            {/* Bottom active progress bar when analyzing */}
+            {isAnalyzing && (
+              <div className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#333333] overflow-hidden">
+                <div className="h-full bg-white animate-pulse w-full" />
+              </div>
+            )}
           </button>
         </div>
       </div>
+
+      {/* Real-time Status / Error Feedback Strip */}
+      {statusText && (
+        <div
+          className={`px-3 py-1.5 rounded text-[10.5px] font-mono flex items-center justify-between border ${
+            statusText.startsWith('Error')
+              ? 'bg-[#281414] text-[#ff8888] border-[#552222]'
+              : 'bg-[#191919] text-[#cccccc] border-[#2f2f2f]'
+          }`}
+        >
+          <span className="truncate flex-1">{statusText}</span>
+          <button
+            type="button"
+            onClick={() => setStatusText(null)}
+            className="text-[9px] text-[#888888] hover:text-white cursor-pointer ml-3 uppercase font-bold shrink-0"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
     </div>
   );
 };

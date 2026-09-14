@@ -313,6 +313,86 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  // Listen to native Windows Explorer file drop events
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setupDropListener = async () => {
+      try {
+        const appWindow = getCurrentWindow();
+        unlisten = await appWindow.onDragDropEvent(async (event) => {
+          if (event.payload.type === 'drop') {
+            const rawPaths: string[] = event.payload.paths;
+            if (!rawPaths || rawPaths.length === 0) return;
+
+            try {
+              const fileInfos = await invoke<Array<{
+                id: string;
+                name: string;
+                path: string;
+                fileType: string;
+                sizeBytes: number;
+                duration?: number | null;
+              }>>('get_batch_files_media_info', { paths: rawPaths });
+
+              if (fileInfos && fileInfos.length > 0) {
+                const newAssets: MediaAsset[] = fileInfos.map((f) => ({
+                  id: f.id,
+                  name: f.name,
+                  path: normalizeAssetPath(f.path),
+                  fileType: f.fileType as any,
+                  sizeBytes: f.sizeBytes,
+                  duration: f.duration || undefined,
+                }));
+
+                setAssets((prev) => {
+                  return cleanDeduplicateAssets([...prev, ...newAssets]);
+                });
+
+                // Auto mount slots if currently empty
+                const firstVoice = newAssets.find((a) => a.fileType === 'voice');
+                if (firstVoice && !activeVoicePathRef.current) {
+                  setActiveVoicePath(firstVoice.path);
+                }
+
+                const firstScript = newAssets.find((a) => a.fileType === 'script');
+                if (firstScript && !activeScriptPathRef.current) {
+                  setActiveScriptPath(firstScript.path);
+                }
+
+                const firstVideo = newAssets.find((a) => a.fileType === 'video');
+                if (firstVideo && !previewAssetRef.current) {
+                  setPreviewAsset(firstVideo);
+                  setActiveFootagePath(firstVideo.path);
+                }
+
+                setExportMessage(`Imported ${newAssets.length} file(s) into Media Pool`);
+              }
+            } catch (err) {
+              console.error('Failed to parse dropped files:', err);
+            }
+          }
+        });
+      } catch (err) {
+        console.warn('Could not register native onDragDropEvent:', err);
+      }
+    };
+
+    setupDropListener();
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  // Auto-dismiss export message notification after 4s
+  useEffect(() => {
+    if (exportMessage) {
+      const timer = setTimeout(() => setExportMessage(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [exportMessage]);
+
   // Compute Total Duration
   const totalDuration = React.useMemo(() => {
     if (previewAsset) {
@@ -872,6 +952,20 @@ export const App: React.FC = () => {
         currentFolder={outputDir}
         onConfirm={handleConfirmFirstRun}
       />
+
+      {/* 7. Global Notification Toast */}
+      {exportMessage && (
+        <div className="fixed bottom-4 right-4 z-50 bg-[#1e1e1e] text-white border border-[#3e3e3e] shadow-2xl rounded px-4 py-2.5 flex items-center gap-3 text-xs font-mono select-none">
+          <span className="text-[#e6e6e6]">{exportMessage}</span>
+          <button
+            type="button"
+            onClick={() => setExportMessage(null)}
+            className="text-[#888888] hover:text-white cursor-pointer ml-2 text-[10px] font-bold"
+          >
+            DISMISS
+          </button>
+        </div>
+      )}
 
     </div>
   );
