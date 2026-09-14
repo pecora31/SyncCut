@@ -51,4 +51,4 @@ Compiled artifacts will be located under `src-tauri/target/release/bundle/`:
 
 ## License
 
-MIT License
+This project is licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0).
