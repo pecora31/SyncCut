@@ -79,7 +79,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const timer = setTimeout(async () => {
       try {
-        const currentVer = await invoke<string>('get_app_version').catch(() => '0.1.3');
+        const currentVer = await invoke<string>('get_app_version').catch(() => '0.1.4');
         const res = await fetch('https://api.github.com/repos/pecora31/SyncCut/releases/latest', {
           headers: { Accept: 'application/vnd.github.v3+json' },
         });
@@ -159,6 +159,9 @@ export const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [previewAsset, setPreviewAsset] = useState<MediaAsset | null>(null);
   const [activeFootagePath, setActiveFootagePath] = useState<string>('');
+  const [activeFootagePaths, setActiveFootagePaths] = useState<string[]>([]);
+  const [matchingMode, setMatchingMode] = useState<'fast' | 'deep'>('fast');
+  const [enableFaceId, setEnableFaceId] = useState<boolean>(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const currentPlaybackTimeRef = useRef<number>(0);
   currentPlaybackTimeRef.current = currentPlaybackTime;
@@ -895,6 +898,7 @@ export const App: React.FC = () => {
             activeVoicePath={activeVoicePath}
             activeScriptPath={activeScriptPath}
             activeFootagePath={activeFootagePath}
+            activeFootagePaths={activeFootagePaths}
             onSelectFootage={(path) => {
               setActiveFootagePath(path);
               const matched = assets.find((a) => a.path === path);
@@ -907,6 +911,22 @@ export const App: React.FC = () => {
                 setPreviewAsset(null);
               }
             }}
+            onSelectFootagePaths={(paths) => {
+              setActiveFootagePaths(paths);
+              if (paths.length > 0) {
+                setActiveFootagePath(paths[0]);
+                const matched = assets.find((a) => a.path === paths[0]);
+                if (matched) {
+                  setPreviewAsset(matched);
+                }
+              } else {
+                setActiveFootagePath('');
+              }
+            }}
+            matchingMode={matchingMode}
+            onChangeMatchingMode={setMatchingMode}
+            enableFaceId={enableFaceId}
+            onToggleFaceId={setEnableFaceId}
             segments={segments}
             outputDir={outputDir}
             hoverDropZone={hoverDropZone}

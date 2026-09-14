@@ -198,7 +198,9 @@ async fn export_premiere_xml_dialog(
 
     if let Some(dest_path) = dialog.save_file() {
         let fps_val = fps.unwrap_or(30.0);
-        let total_dur = segments.last().map(|s| s.end_time).unwrap_or(60.0);
+        let voice_dur = get_media_duration(&voice_path).unwrap_or(0.0);
+        let seg_dur = segments.last().map(|s| s.end_time).unwrap_or(60.0);
+        let total_dur = if voice_dur > 0.5 { voice_dur } else { seg_dur };
         generate_premiere_xml(&segments, &voice_path, total_dur, fps_val, &dest_path)?;
         Ok(dest_path.to_string_lossy().into_owned())
     } else {
@@ -212,6 +214,8 @@ async fn execute_voice_visual_matching(
     script_path: String,
     broll_paths: Vec<String>,
     output_dir: String,
+    mode: Option<String>,
+    enable_face_id: Option<bool>,
 ) -> Result<Vec<SentenceSegment>, String> {
     let resolved_voice = resolve_to_absolute_path(&voice_path);
     if !resolved_voice.exists() {
@@ -226,6 +230,9 @@ async fn execute_voice_visual_matching(
     let _ = fs::create_dir_all(&out_dir);
     let output_json = out_dir.join("matched_segments.json");
     let broll_json = serde_json::to_string(&broll_paths).unwrap_or_else(|_| "[]".to_string());
+
+    let match_mode = mode.unwrap_or_else(|| "fast".to_string());
+    let face_flag = if enable_face_id.unwrap_or(false) { "--face-id" } else { "--no-face-id" };
 
     // 1. Try running Python AI engine if available
     let mut python_succeeded = false;
@@ -246,6 +253,8 @@ async fn execute_voice_visual_matching(
             "--script", &script_path,
             "--broll", &broll_json,
             "--output", &output_json.to_string_lossy(),
+            "--mode", &match_mode,
+            face_flag,
         ]);
         #[cfg(target_os = "windows")]
         {
@@ -309,8 +318,9 @@ async fn execute_voice_visual_matching(
         .collect();
     let total_words: usize = word_counts.iter().sum::<usize>().max(1);
 
-    // Prepare candidate footage shots
-    let mut candidate_shots: Vec<(String, String, f64, f64)> = Vec::new();
+    // Prepare candidate footage shots across all provided footages
+    // Format: (media_path, media_name, source_in, source_out, media_total_duration)
+    let mut candidate_shots: Vec<(String, String, f64, f64, f64)> = Vec::new();
     for bp in &broll_paths {
         let p = resolve_to_absolute_path(bp);
         if !p.exists() { continue; }
@@ -324,7 +334,7 @@ async fn execute_voice_visual_matching(
             let s_in = (i as f64) * shot_span;
             let s_out = (s_in + shot_span).min(dur);
             if s_out - s_in >= 0.5 {
-                candidate_shots.push((canon.clone(), name.clone(), s_in, s_out));
+                candidate_shots.push((canon.clone(), name.clone(), s_in, s_out, dur));
             }
         }
     }
@@ -346,18 +356,22 @@ async fn execute_voice_visual_matching(
         current_time = end;
 
         let (shot_path, shot_name, source_in, source_out, asset_type) = if !candidate_shots.is_empty() {
-            let (sp, sn, si, _so) = &candidate_shots[idx % candidate_shots.len()];
-            let s_in = *si;
-            let s_out = (s_in + dur).round();
+            let (sp, sn, si, _so, max_dur) = &candidate_shots[idx % candidate_shots.len()];
+            let mut s_in = *si;
+            // Prevent source_out from exceeding actual video duration
+            if s_in + dur > *max_dur {
+                s_in = (max_dur - dur).max(0.0);
+            }
+            let s_out = ((s_in + dur) * 100.0).round() / 100.0;
             let ext = Path::new(sp).extension().unwrap_or_default().to_string_lossy().to_lowercase();
             let a_type = if ["png", "jpg", "jpeg", "webp", "bmp"].contains(&ext.as_str()) {
                 "image".to_string()
             } else {
                 "video".to_string()
             };
-            (sp.clone(), sn.clone(), s_in, s_out, a_type)
+            (sp.clone(), sn.clone(), (s_in * 100.0).round() / 100.0, s_out, a_type)
         } else {
-            (String::new(), String::new(), 0.0, dur.round(), "video".to_string())
+            (String::new(), String::new(), 0.0, (dur * 100.0).round() / 100.0, "video".to_string())
         };
 
         segments.push(SentenceSegment {

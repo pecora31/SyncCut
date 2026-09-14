@@ -8,7 +8,9 @@ interface AIPipelineDockProps {
   activeVoicePath: string;
   activeScriptPath: string;
   activeFootagePath?: string;
+  activeFootagePaths?: string[];
   onSelectFootage?: (path: string) => void;
+  onSelectFootagePaths?: (paths: string[]) => void;
   segments: SentenceSegment[];
   outputDir: string;
   onSelectVoice: (path: string) => void;
@@ -18,6 +20,10 @@ interface AIPipelineDockProps {
   onClearPreview?: () => void;
   onAddAssets?: (assets: MediaAsset[]) => void;
   hoverDropZone?: string | null;
+  matchingMode?: 'fast' | 'deep';
+  onChangeMatchingMode?: (mode: 'fast' | 'deep') => void;
+  enableFaceId?: boolean;
+  onToggleFaceId?: (enabled: boolean) => void;
 }
 
 function parseDroppedAsset(e: React.DragEvent): MediaAsset | null {
@@ -62,7 +68,9 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
   activeVoicePath,
   activeScriptPath,
   activeFootagePath: propActiveFootagePath,
+  activeFootagePaths: propActiveFootagePaths,
   onSelectFootage,
+  onSelectFootagePaths,
   segments: _segments,
   outputDir,
   onSelectVoice,
@@ -72,6 +80,10 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
   onClearPreview,
   onAddAssets,
   hoverDropZone,
+  matchingMode: propMatchingMode,
+  onChangeMatchingMode,
+  enableFaceId: propEnableFaceId,
+  onToggleFaceId,
 }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
@@ -79,11 +91,73 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
   const [holdingSlot, setHoldingSlot] = useState<'voice' | 'script' | 'footage' | null>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Active footage path for slot 3 (controlled via prop if provided, else internal)
+  // Engine Mode: 'fast' (Apple DFN-CLIP/SigLIP) vs 'deep' (Qwen2-VL-2B INT4)
+  const [internalMatchingMode, setInternalMatchingMode] = useState<'fast' | 'deep'>('fast');
+  const matchingMode = propMatchingMode !== undefined ? propMatchingMode : internalMatchingMode;
+  const setMatchingMode = (m: 'fast' | 'deep') => {
+    setInternalMatchingMode(m);
+    onChangeMatchingMode?.(m);
+  };
+
+  // Face ID recognition toggle
+  const [internalFaceId, setInternalFaceId] = useState<boolean>(false);
+  const enableFaceId = propEnableFaceId !== undefined ? propEnableFaceId : internalFaceId;
+  const setEnableFaceId = (val: boolean) => {
+    setInternalFaceId(val);
+    onToggleFaceId?.(val);
+  };
+
+  // Multi-Footage paths
+  const [internalFootagePaths, setInternalFootagePaths] = useState<string[]>([]);
+  const activeFootagePaths = propActiveFootagePaths !== undefined ? propActiveFootagePaths : internalFootagePaths;
+
+  // Active footage path for preview monitor
   const [internalFootagePath, setInternalFootagePath] = useState<string>('');
-  const activeFootagePath = propActiveFootagePath !== undefined ? propActiveFootagePath : internalFootagePath;
+  const activeFootagePath = propActiveFootagePath !== undefined
+    ? propActiveFootagePath
+    : (activeFootagePaths[0] || internalFootagePath);
+
+  const updateFootagePaths = (paths: string[]) => {
+    setInternalFootagePaths(paths);
+    onSelectFootagePaths?.(paths);
+    if (paths.length > 0) {
+      const primary = paths[0];
+      setInternalFootagePath(primary);
+      onSelectFootage?.(primary);
+      const matched = assets.find((a) => a.path === primary);
+      if (matched) onLoadToPreview?.(matched);
+    } else {
+      setInternalFootagePath('');
+      onSelectFootage?.('');
+      onClearPreview?.();
+    }
+  };
+
+  const handleAddFootage = (path: string) => {
+    if (!path) return;
+    const clean = path.trim();
+    if (!activeFootagePaths.some((p) => p.replace(/\\/g, '/').toLowerCase() === clean.replace(/\\/g, '/').toLowerCase())) {
+      updateFootagePaths([...activeFootagePaths, clean]);
+    }
+  };
+
+  const handleRemoveFootage = (path: string) => {
+    const next = activeFootagePaths.filter(
+      (p) => p.replace(/\\/g, '/').toLowerCase() !== path.replace(/\\/g, '/').toLowerCase()
+    );
+    updateFootagePaths(next);
+  };
+
+  const handleClearAllFootages = () => {
+    updateFootagePaths([]);
+  };
 
   const handleSelectFootage = (path: string) => {
+    if (!path) {
+      handleClearAllFootages();
+      return;
+    }
+    handleAddFootage(path);
     setInternalFootagePath(path);
     onSelectFootage?.(path);
     const matched = assets.find((a) => a.path === path);
@@ -242,9 +316,16 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
       const picked = await invoke<MediaAsset[]>('pick_files_multi');
       if (picked && picked.length > 0) {
         onAddAssets?.(picked);
-        const video = picked.find(isVideoAsset);
-        if (video) {
-          handleSelectFootage(video.path);
+        const videos = picked.filter(isVideoAsset);
+        if (videos.length > 0) {
+          const newPaths = [...activeFootagePaths];
+          videos.forEach((v) => {
+            if (!newPaths.some((p) => p.replace(/\\/g, '/').toLowerCase() === v.path.replace(/\\/g, '/').toLowerCase())) {
+              newPaths.push(v.path);
+            }
+          });
+          updateFootagePaths(newPaths);
+          setStatusText(`Added ${videos.length} footage clip(s) to Slot 3`);
         }
       }
     } catch (err) {
@@ -266,10 +347,12 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
     if (isAnalyzing) return;
 
     setIsAnalyzing(true);
-    setStatusText('Analyzing speech timestamps & aligning scenes...');
+    setStatusText(`Running ${matchingMode.toUpperCase()} AI assembly with ${enableFaceId ? 'Face ID' : 'standard features'}...`);
 
     try {
-      const brollPaths = videoAssets.map((a) => a.path);
+      const brollPaths = activeFootagePaths.length > 0
+        ? activeFootagePaths
+        : videoAssets.map((a) => a.path);
       const outDir = outputDir || './media_pool';
 
       const result = await invoke<SentenceSegment[]>('execute_voice_visual_matching', {
@@ -277,6 +360,8 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
         scriptPath: activeScriptPath,
         brollPaths,
         outputDir: outDir,
+        mode: matchingMode,
+        enableFaceId,
       });
 
       if (!result || result.length === 0) {
@@ -284,7 +369,7 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
       }
 
       onSegmentsMatched(result);
-      setStatusText(`Successfully aligned ${result.length} scene segments`);
+      setStatusText(`Successfully aligned ${result.length} scenes (${matchingMode.toUpperCase()} mode, ${brollPaths.length} footages)`);
     } catch (err: any) {
       console.error('AI Pipeline execution error:', err);
       const errStr = typeof err === 'string' ? err : (err?.message || 'Analysis failed. Please check inputs.');
@@ -624,20 +709,25 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
         </div>
 
         {/* ======================================================== */}
-        {/* SLOT 3: FOOTAGE */}
+        {/* SLOT 3: FOOTAGE (MULTI-SELECTION) */}
         {/* ======================================================== */}
         <div className="flex flex-col min-w-0" data-dropdown-container>
           {/* Label Outside Above */}
           <div className="flex items-center justify-between text-[10px] font-mono text-[#888888] font-bold mb-1 px-0.5">
-            <span>3. FOOTAGE</span>
-            {activeFootageAsset && (
+            <div className="flex items-center gap-1.5">
+              <span>3. FOOTAGE</span>
+              {activeFootagePaths.length > 0 && (
+                <span className="text-[8.5px] px-1 py-0.2 bg-[#262626] text-[#cccccc] rounded border border-[#383838]">
+                  {activeFootagePaths.length} {activeFootagePaths.length === 1 ? 'CLIP' : 'CLIPS'}
+                </span>
+              )}
+            </div>
+            {activeFootagePaths.length > 0 && (
               <button
                 type="button"
-                onClick={() => {
-                  handleSelectFootage('');
-                }}
+                onClick={handleClearAllFootages}
                 className="text-[8.5px] font-mono text-[#888888] hover:text-white transition-colors cursor-pointer"
-                title="Clear footage"
+                title="Clear all footages"
               >
                 CLEAR
               </button>
@@ -666,7 +756,30 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
                 setDragTarget(null);
                 const asset = parseDroppedAsset(e);
                 if (asset && (isVideoAsset(asset) || asset.fileType === 'image')) {
-                  handleSelectFootage(asset.path);
+                  handleAddFootage(asset.path);
+                  setStatusText(`Added footage: ${asset.name}`);
+                  return;
+                }
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  const added: string[] = [];
+                  for (let i = 0; i < e.dataTransfer.files.length; i++) {
+                    const f = e.dataTransfer.files[i];
+                    const p = (f as any).path || (f as any).webkitRelativePath;
+                    if (p) {
+                      added.push(p);
+                      onAddAssets?.([{
+                        id: `footage_${Date.now()}_${i}`,
+                        name: f.name,
+                        path: p,
+                        fileType: 'video',
+                        sizeBytes: f.size,
+                      }]);
+                    }
+                  }
+                  if (added.length > 0) {
+                    updateFootagePaths([...new Set([...activeFootagePaths, ...added])]);
+                    setStatusText(`Added ${added.length} footage(s)`);
+                  }
                 }
               }}
               onMouseDown={(e) => {
@@ -686,8 +799,8 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
                 if (dock) {
                   const rect = dock.getBoundingClientRect();
                   if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
-                    handleSelectFootage('');
-                    onClearPreview?.();
+                    handleRemoveFootage(activeFootageAsset.path);
+                    setStatusText(`Removed footage: ${activeFootageAsset.name}`);
                   }
                 }
               }}
@@ -697,7 +810,7 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
               className={`h-[76px] bg-[#141414] border border-[#2e2e2e] hover:border-[#444444] rounded overflow-hidden select-none transition-colors relative group ${
                 holdingSlot === 'footage' ? 'cursor-grabbing' : 'cursor-grab'
               }`}
-              title={`${activeFootageAsset.name} (Drag out to unmount, or click to preview)`}
+              title={`${activeFootageAsset.name} (Click to preview, drag out to unmount)`}
             >
               {/* Thumbnail Display */}
               {activeFootageAsset.fileType === 'image' ? (
@@ -719,6 +832,13 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
                   }}
                   className="w-full h-full object-cover pointer-events-none"
                 />
+              )}
+
+              {/* Multi-Footage Indicator Overlay */}
+              {activeFootagePaths.length > 1 && (
+                <div className="absolute top-1 right-1 bg-[#181818]/90 text-[8.5px] font-mono text-white px-1.5 py-0.5 rounded border border-[#3e3e3e] shadow">
+                  {activeFootagePaths.length} FOOTAGES
+                </div>
               )}
             </div>
           ) : (
@@ -742,24 +862,29 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
                 setDragTarget(null);
                 const asset = parseDroppedAsset(e);
                 if (asset && (isVideoAsset(asset) || asset.fileType === 'image')) {
-                  handleSelectFootage(asset.path);
+                  handleAddFootage(asset.path);
                   setStatusText(`Footage preview: ${asset.name}`);
                   return;
                 }
                 if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                  const file = e.dataTransfer.files[0];
-                  const fullPath = (file as any).path || (file as any).webkitRelativePath;
-                  if (fullPath) {
-                    const newAsset: MediaAsset = {
-                      id: `footage_${Date.now()}`,
-                      name: file.name,
-                      path: fullPath,
-                      fileType: 'video',
-                      sizeBytes: file.size,
-                    };
-                    onAddAssets?.([newAsset]);
-                    handleSelectFootage(fullPath);
-                    setStatusText(`Footage: ${file.name}`);
+                  const added: string[] = [];
+                  for (let i = 0; i < e.dataTransfer.files.length; i++) {
+                    const f = e.dataTransfer.files[i];
+                    const p = (f as any).path || (f as any).webkitRelativePath;
+                    if (p) {
+                      added.push(p);
+                      onAddAssets?.([{
+                        id: `footage_${Date.now()}_${i}`,
+                        name: f.name,
+                        path: p,
+                        fileType: 'video',
+                        sizeBytes: f.size,
+                      }]);
+                    }
+                  }
+                  if (added.length > 0) {
+                    updateFootagePaths([...new Set([...activeFootagePaths, ...added])]);
+                    setStatusText(`Added ${added.length} footage(s)`);
                   }
                 }
               }}
@@ -768,7 +893,7 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
                   ? 'bg-[#1e1e1e] border-[#666666] ring-1 ring-[#888888]'
                   : 'bg-[#131313] border-[#333333] hover:border-[#555555] hover:bg-[#181818]'
               }`}
-              title="Click to select or drop video clip"
+              title="Click to select or drop video footage files"
             >
               <span className="text-[#666666] group-hover:text-white text-2xl font-light leading-none select-none transition-colors">
                 +
@@ -783,32 +908,64 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
               onClick={() => setOpenDropdown(openDropdown === 'footage' ? null : 'footage')}
               className="w-full py-1 px-2 bg-[#191919] hover:bg-[#252525] border border-[#303030] rounded text-[10px] font-mono text-[#cccccc] hover:text-white flex items-center justify-between transition-colors cursor-pointer"
             >
-              <span className="truncate">{activeFootageAsset ? activeFootageAsset.name : 'Choose File'}</span>
+              <span className="truncate">
+                {activeFootagePaths.length > 1
+                  ? `${activeFootagePaths.length} Footages Selected`
+                  : activeFootageAsset
+                  ? activeFootageAsset.name
+                  : 'Choose Footage(s)'}
+              </span>
               <span className="text-[8px] text-[#777777] ml-1 shrink-0">▼</span>
             </button>
 
             {openDropdown === 'footage' && (
-              <div className="absolute left-0 right-0 top-full mt-1 bg-[#1a1a1a] border border-[#383838] rounded shadow-2xl z-50 py-1 max-h-48 overflow-y-auto font-mono text-[10px]">
+              <div className="absolute left-0 right-0 top-full mt-1 bg-[#1a1a1a] border border-[#383838] rounded shadow-2xl z-50 py-1 max-h-56 overflow-y-auto font-mono text-[10px]">
+                {videoAssets.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateFootagePaths(videoAssets.map((a) => a.path));
+                      setOpenDropdown(null);
+                      setStatusText(`Selected all ${videoAssets.length} footages from pool`);
+                    }}
+                    className="w-full text-left px-2 py-1.5 text-white font-bold hover:bg-[#252525] transition-colors cursor-pointer"
+                  >
+                    + Select All ({videoAssets.length} clips)
+                  </button>
+                )}
+                {videoAssets.length > 0 && <div className="border-t border-[#2d2d2d] my-1" />}
+
                 {videoAssets.length === 0 ? (
                   <div className="px-2 py-1.5 text-[#666666] text-center">No video clips in pool</div>
                 ) : (
-                  videoAssets.map((asset) => (
-                    <button
-                      key={asset.id}
-                      type="button"
-                      onClick={() => {
-                        handleSelectFootage(asset.path);
-                        setOpenDropdown(null);
-                      }}
-                      className={`w-full text-left px-2 py-1.5 truncate transition-colors cursor-pointer flex items-center justify-between ${
-                        activeFootagePath === asset.path
-                          ? 'bg-[#2a2a2a] text-white font-bold'
-                          : 'text-[#cccccc] hover:bg-[#252525] hover:text-white'
-                      }`}
-                    >
-                      <span className="truncate">{asset.name}</span>
-                    </button>
-                  ))
+                  videoAssets.map((asset) => {
+                    const isSelected = activeFootagePaths.some(
+                      (p) => p.replace(/\\/g, '/').toLowerCase() === asset.path.replace(/\\/g, '/').toLowerCase()
+                    );
+                    return (
+                      <button
+                        key={asset.id}
+                        type="button"
+                        onClick={() => {
+                          if (isSelected) {
+                            handleRemoveFootage(asset.path);
+                          } else {
+                            handleAddFootage(asset.path);
+                          }
+                        }}
+                        className={`w-full text-left px-2 py-1.5 truncate transition-colors cursor-pointer flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-[#2a2a2a] text-white font-bold'
+                            : 'text-[#cccccc] hover:bg-[#252525] hover:text-white'
+                        }`}
+                      >
+                        <span className="truncate">{asset.name}</span>
+                        <span className="text-[9px] text-[#888888] ml-2 shrink-0">
+                          {isSelected ? 'ADDED' : '+'}
+                        </span>
+                      </button>
+                    );
+                  })
                 )}
                 <div className="border-t border-[#2d2d2d] my-1" />
                 <button
@@ -821,19 +978,65 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
                 >
                   + Browse from computer...
                 </button>
+                {activeFootagePaths.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleClearAllFootages();
+                      setOpenDropdown(null);
+                    }}
+                    className="w-full text-left px-2 py-1.5 text-[#888888] hover:text-white hover:bg-[#252525] transition-colors cursor-pointer border-t border-[#2d2d2d]"
+                  >
+                    Clear selection
+                  </button>
+                )}
               </div>
             )}
           </div>
         </div>
 
         {/* ======================================================== */}
-        {/* SLOT 4: PIPELINE ACTION */}
+        {/* SLOT 4: PIPELINE ACTION & CONTROLS */}
         {/* ======================================================== */}
         <div className="flex flex-col min-w-0">
-          <div className="flex items-center justify-end text-[10px] font-mono text-[#888888] font-bold mb-1 px-0.5 h-[15px]">
-            {isAnalyzing && (
-              <span className="text-[9px] text-[#aaaaaa] animate-pulse">Running...</span>
-            )}
+          {/* Top Engine Configuration Bar */}
+          <div className="flex items-center justify-between text-[10px] font-mono text-[#888888] font-bold mb-1 px-0.5 h-[15px]">
+            {/* Mode Toggle: FAST vs DEEP */}
+            <div className="flex items-center gap-1 text-[9px] font-mono">
+              <button
+                type="button"
+                onClick={() => setMatchingMode('fast')}
+                className={`transition-colors cursor-pointer ${
+                  matchingMode === 'fast' ? 'text-white font-bold underline' : 'text-[#777777] hover:text-[#cccccc]'
+                }`}
+                title="Fast Mode: Apple DFN-CLIP / SigLIP"
+              >
+                FAST
+              </button>
+              <span className="text-[#444444]">|</span>
+              <button
+                type="button"
+                onClick={() => setMatchingMode('deep')}
+                className={`transition-colors cursor-pointer ${
+                  matchingMode === 'deep' ? 'text-white font-bold underline' : 'text-[#777777] hover:text-[#cccccc]'
+                }`}
+                title="Deep Mode: Qwen2-VL-2B INT4 Context Model"
+              >
+                DEEP
+              </button>
+            </div>
+
+            {/* Face ID Toggle */}
+            <button
+              type="button"
+              onClick={() => setEnableFaceId(!enableFaceId)}
+              className={`text-[9px] font-mono transition-colors cursor-pointer ${
+                enableFaceId ? 'text-white font-bold' : 'text-[#666666] hover:text-[#aaaaaa]'
+              }`}
+              title="Toggle InsightFace character face recognition"
+            >
+              FACE: {enableFaceId ? 'ON' : 'OFF'}
+            </button>
           </div>
 
           {/* Action Trigger Button (Height 76px matching slots) */}
@@ -848,12 +1051,14 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
                 ? 'bg-[#282828] hover:bg-[#343434] active:bg-[#3e3e3e] border-[#444444] text-white shadow-sm'
                 : 'bg-[#181818] hover:bg-[#202020] border-[#2c2c2c] text-[#777777]'
             }`}
-            title={canRun ? 'Analyze speech and align video clips to sentences' : 'Click for setup requirements'}
+            title={canRun ? 'Analyze speech and assemble dynamic timeline' : 'Click for setup requirements'}
           >
             {isAnalyzing ? (
               <div className="flex flex-col items-center gap-1">
                 <span className="font-bold tracking-wider text-xs text-white">ANALYZING...</span>
-                <span className="text-[9.5px] text-[#999999]">Aligning scenes & audio</span>
+                <span className="text-[9.5px] text-[#999999]">
+                  {matchingMode === 'fast' ? 'Fast CLIP & Whisper' : 'Deep Qwen2-VL & Whisper'}
+                </span>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-0.5">
@@ -861,7 +1066,15 @@ export const AIPipelineDock: React.FC<AIPipelineDockProps> = ({
                   START ANALYSIS
                 </span>
                 <span className="text-[9px] text-[#777777]">
-                  {canRun ? 'Align scenes & footage' : 'Requires Voice & Script'}
+                  {canRun
+                    ? `${matchingMode.toUpperCase()} • ${
+                        activeFootagePaths.length > 0
+                          ? `${activeFootagePaths.length} footages`
+                          : videoAssets.length > 0
+                          ? `${videoAssets.length} pool clips`
+                          : 'Voice & Script'
+                      }`
+                    : 'Requires Voice & Script'}
                 </span>
               </div>
             )}
