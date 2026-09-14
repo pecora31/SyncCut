@@ -422,8 +422,127 @@ fn open_directory(path: String) -> Result<(), String> {
     Ok(())
 }
 
+pub fn find_binary(binary_name: &str) -> PathBuf {
+    let exe_name = if cfg!(windows) && !binary_name.ends_with(".exe") {
+        format!("{}.exe", binary_name)
+    } else {
+        binary_name.to_string()
+    };
+
+    // 1. Next to current running executable
+    if let Ok(cur_exe) = std::env::current_exe() {
+        if let Some(parent) = cur_exe.parent() {
+            let next_to_exe = parent.join(&exe_name);
+            if next_to_exe.exists() {
+                return next_to_exe;
+            }
+            let in_bin = parent.join("bin").join(&exe_name);
+            if in_bin.exists() {
+                return in_bin;
+            }
+            let in_resources_bin = parent.join("resources").join("bin").join(&exe_name);
+            if in_resources_bin.exists() {
+                return in_resources_bin;
+            }
+        }
+    }
+
+    // 2. Project / workspace bin folder
+    let ws_bin = get_workspace_root().join("bin").join(&exe_name);
+    if ws_bin.exists() {
+        return ws_bin;
+    }
+
+    // 3. User LocalAppData folder
+    #[cfg(windows)]
+    {
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            let user_bin = PathBuf::from(local_app_data).join("SyncCut").join("bin").join(&exe_name);
+            if user_bin.exists() {
+                return user_bin;
+            }
+        }
+    }
+
+    // 4. Default to system PATH
+    PathBuf::from(binary_name)
+}
+
+pub fn ensure_ytdlp() -> Result<PathBuf, String> {
+    let resolved = find_binary("yt-dlp");
+
+    // Check if the resolved binary works
+    let mut check_cmd = Command::new(&resolved);
+    check_cmd.arg("--version");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        check_cmd.creation_flags(0x08000000);
+    }
+    if let Ok(output) = check_cmd.output() {
+        if output.status.success() {
+            return Ok(resolved);
+        }
+    }
+
+    // If not found, auto-download yt-dlp.exe to %LOCALAPPDATA%/SyncCut/bin/
+    #[cfg(windows)]
+    {
+        let local_app_data = std::env::var("LOCALAPPDATA")
+            .unwrap_or_else(|_| "C:\\Users\\Public".to_string());
+        let target_dir = PathBuf::from(local_app_data).join("SyncCut").join("bin");
+        let _ = fs::create_dir_all(&target_dir);
+        let target_exe = target_dir.join("yt-dlp.exe");
+
+        eprintln!("[SyncCut] Downloading yt-dlp.exe to {:?}...", target_exe);
+
+        // 1. Try Windows built-in curl.exe
+        let mut curl_cmd = Command::new("curl.exe");
+        curl_cmd.args([
+            "-L",
+            "--retry", "3",
+            "-o", &target_exe.to_string_lossy(),
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+        ]);
+        use std::os::windows::process::CommandExt;
+        curl_cmd.creation_flags(0x08000000);
+
+        if let Ok(output) = curl_cmd.output() {
+            if output.status.success() && target_exe.exists() {
+                if let Ok(meta) = fs::metadata(&target_exe) {
+                    if meta.len() > 1_000_000 {
+                        return Ok(target_exe);
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback: PowerShell Invoke-WebRequest
+        let mut ps_cmd = Command::new("powershell.exe");
+        let ps_script = format!(
+            "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe', '{}')",
+            target_exe.to_string_lossy().replace('\\', "/")
+        );
+        ps_cmd.args(["-NoProfile", "-Command", &ps_script]);
+        ps_cmd.creation_flags(0x08000000);
+
+        if let Ok(output) = ps_cmd.output() {
+            if output.status.success() && target_exe.exists() {
+                if let Ok(meta) = fs::metadata(&target_exe) {
+                    if meta.len() > 1_000_000 {
+                        return Ok(target_exe);
+                    }
+                }
+            }
+        }
+    }
+
+    Err("Could not find or download yt-dlp. Please ensure an internet connection is available.".to_string())
+}
+
 fn get_media_duration(file_path: &str) -> Result<f64, String> {
-    let output = Command::new("ffprobe")
+    let ffprobe_bin = find_binary("ffprobe");
+    let output = Command::new(ffprobe_bin)
         .args([
             "-v",
             "error",
@@ -448,7 +567,8 @@ fn download_youtube_sources(urls: &[String], output_sources_dir: &Path) -> Vec<P
     for (index, url) in urls.iter().enumerate() {
         let output_template = output_sources_dir.join(format!("yt_source_{}.mp4", index + 1));
         
-        let output = Command::new("yt-dlp")
+        let ytdlp_bin = ensure_ytdlp().unwrap_or_else(|_| PathBuf::from("yt-dlp"));
+        let output = Command::new(ytdlp_bin)
             .args([
                 "-f",
                 "bv*[height<=1080]+ba/b[height<=1080]/best",
@@ -980,7 +1100,8 @@ pub struct YouTubeDownloadOptions {
 #[tauri::command]
 async fn fetch_youtube_metadata(url: String) -> Result<YouTubeMetadata, String> {
     tokio::task::spawn_blocking(move || {
-        let mut cmd = Command::new("yt-dlp");
+        let ytdlp_path = ensure_ytdlp()?;
+        let mut cmd = Command::new(&ytdlp_path);
         cmd.args([
             "--dump-json",
             "--no-playlist",
@@ -1320,7 +1441,8 @@ async fn download_youtube_media(
 
         args.push(options.url.clone());
 
-        let mut cmd = Command::new("yt-dlp");
+        let ytdlp_path = ensure_ytdlp()?;
+        let mut cmd = Command::new(&ytdlp_path);
         cmd.args(&args);
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
@@ -1500,7 +1622,8 @@ async fn prepare_youtube_preview_cache(url: String, height: Option<i64>) -> Resu
         }
 
         let filter = format!("bv*[height<={h}]+ba/b[height<={h}]/18/best", h = preview_h);
-        let output = Command::new("yt-dlp")
+        let ytdlp_path = ensure_ytdlp()?;
+        let output = Command::new(&ytdlp_path)
             .args([
                 "-f",
                 &filter,

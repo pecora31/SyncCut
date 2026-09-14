@@ -33,6 +33,11 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Fetch yt-dlp binary for release bundling
+        run: |
+          mkdir -p bin
+          curl -L -o bin/yt-dlp.exe https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe
+
       - name: Build Tauri Application
         run: npm run tauri build
 
