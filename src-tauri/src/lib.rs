@@ -329,11 +329,6 @@ async fn execute_voice_visual_matching(
         }
     }
 
-    if candidate_shots.is_empty() {
-        let name = resolved_voice.file_name().unwrap_or_default().to_string_lossy().into_owned();
-        candidate_shots.push((voice_abs.clone(), name, 0.0, total_duration));
-    }
-
     let mut segments: Vec<SentenceSegment> = Vec::new();
     let mut current_time = 0.0;
     let total_sentences = raw_sentences.len();
@@ -350,15 +345,19 @@ async fn execute_voice_visual_matching(
         }
         current_time = end;
 
-        let (shot_path, shot_name, shot_in, _shot_out) = &candidate_shots[idx % candidate_shots.len()];
-        let source_in = *shot_in;
-        let source_out = (source_in + dur).round();
-
-        let ext = Path::new(shot_path).extension().unwrap_or_default().to_string_lossy().to_lowercase();
-        let asset_type = if ["png", "jpg", "jpeg", "webp", "bmp"].contains(&ext.as_str()) {
-            "image".to_string()
+        let (shot_path, shot_name, source_in, source_out, asset_type) = if !candidate_shots.is_empty() {
+            let (sp, sn, si, _so) = &candidate_shots[idx % candidate_shots.len()];
+            let s_in = *si;
+            let s_out = (s_in + dur).round();
+            let ext = Path::new(sp).extension().unwrap_or_default().to_string_lossy().to_lowercase();
+            let a_type = if ["png", "jpg", "jpeg", "webp", "bmp"].contains(&ext.as_str()) {
+                "image".to_string()
+            } else {
+                "video".to_string()
+            };
+            (sp.clone(), sn.clone(), s_in, s_out, a_type)
         } else {
-            "video".to_string()
+            (String::new(), String::new(), 0.0, dur.round(), "video".to_string())
         };
 
         segments.push(SentenceSegment {
@@ -368,8 +367,8 @@ async fn execute_voice_visual_matching(
             end_time: (end * 100.0).round() / 100.0,
             duration: ((end - start) * 100.0).round() / 100.0,
             asset_type,
-            source_media_name: shot_name.clone(),
-            source_media_path: shot_path.clone(),
+            source_media_name: shot_name,
+            source_media_path: shot_path,
             source_in,
             source_out,
             match_confidence: Some(92.0),
@@ -590,6 +589,52 @@ fn download_youtube_sources(urls: &[String], output_sources_dir: &Path) -> Vec<P
     downloaded_files
 }
 
+fn clean_xml_text(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+fn to_fcp_pathurl(path_str: &str) -> String {
+    let normalized = path_str.replace('\\', "/");
+    let mut encoded = String::new();
+    for ch in normalized.chars() {
+        match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' | '/' | ':' => {
+                encoded.push(ch);
+            }
+            ' ' => {
+                encoded.push_str("%20");
+            }
+            _ => {
+                let mut buf = [0u8; 4];
+                let s = ch.encode_utf8(&mut buf);
+                for b in s.as_bytes() {
+                    encoded.push_str(&format!("%{:02X}", b));
+                }
+            }
+        }
+    }
+    if !encoded.starts_with('/') {
+        format!("file://localhost/{}", encoded)
+    } else {
+        format!("file://localhost{}", encoded)
+    }
+}
+
+fn is_audio_ext(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower.ends_with(".wav")
+        || lower.ends_with(".mp3")
+        || lower.ends_with(".m4a")
+        || lower.ends_with(".aac")
+        || lower.ends_with(".flac")
+        || lower.ends_with(".ogg")
+        || lower.ends_with(".wma")
+}
+
 fn generate_premiere_xml(
     segments: &[SentenceSegment],
     voice_path: &str,
@@ -597,24 +642,47 @@ fn generate_premiere_xml(
     fps: f64,
     output_xml_path: &Path,
 ) -> Result<(), String> {
-    let timebase = fps.round() as i64;
-    let total_frames = (total_duration * fps).round() as i64;
+    let (timebase, ntsc_str, display_format) = if (fps - 29.97).abs() < 0.05 {
+        (30, "TRUE", "DF")
+    } else if (fps - 23.976).abs() < 0.05 {
+        (24, "TRUE", "NDF")
+    } else if (fps - 59.94).abs() < 0.05 {
+        (60, "TRUE", "DF")
+    } else {
+        (fps.round().max(1.0) as i64, "FALSE", "NDF")
+    };
+
+    let total_frames = (total_duration * fps).round().max(1.0) as i64;
     
-    // Normalize path for XML URL
-    let voice_url = format!("file://localhost/{}", voice_path.replace('\\', "/"));
+    // Properly percent-encode file paths for FCP XML URI compliance
+    let voice_url = to_fcp_pathurl(voice_path);
+    let voice_file_name = Path::new(voice_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Voiceover".to_string());
+    let voice_name_clean = clean_xml_text(&voice_file_name);
 
     let mut video_clips_xml = String::new();
 
     for (idx, seg) in segments.iter().enumerate() {
-        let start_frame = (seg.start_time * fps).round() as i64;
-        let end_frame = (seg.end_time * fps).round() as i64;
-        let duration_frames = end_frame - start_frame;
-        let in_frame = (seg.source_in * fps).round() as i64;
-        let out_frame = (seg.source_out * fps).round() as i64;
-        
-        let media_url = format!("file://localhost/{}", seg.source_media_path.replace('\\', "/"));
+        // Exclude audio files incorrectly assigned as video footage
+        let media_path = seg.source_media_path.trim();
+        if media_path.is_empty() || is_audio_ext(media_path) {
+            continue;
+        }
+
+        let start_frame = (seg.start_time * fps).round().max(0.0) as i64;
+        let end_frame = (seg.end_time * fps).round().max(start_frame as f64 + 1.0) as i64;
+        let duration_frames = (end_frame - start_frame).max(1);
+        let in_frame = (seg.source_in * fps).round().max(0.0) as i64;
+        // Strictly guarantee out_frame - in_frame == duration_frames == end_frame - start_frame
+        let out_frame = in_frame + duration_frames;
+
+        let media_url = to_fcp_pathurl(media_path);
         let clip_id = format!("clipitem-{}", idx + 1);
         let file_id = format!("file-{}", idx + 1);
+        let media_name_clean = clean_xml_text(&seg.source_media_name);
+        let file_duration = (out_frame + 18000).max(total_frames);
 
         let clip_xml = format!(
             r#"
@@ -623,7 +691,7 @@ fn generate_premiere_xml(
             <duration>{duration_frames}</duration>
             <rate>
               <timebase>{timebase}</timebase>
-              <ntsc>FALSE</ntsc>
+              <ntsc>{ntsc}</ntsc>
             </rate>
             <start>{start_frame}</start>
             <end>{end_frame}</end>
@@ -634,9 +702,9 @@ fn generate_premiere_xml(
               <pathurl>{media_url}</pathurl>
               <rate>
                 <timebase>{timebase}</timebase>
-                <ntsc>FALSE</ntsc>
+                <ntsc>{ntsc}</ntsc>
               </rate>
-              <duration>{duration_frames}</duration>
+              <duration>{file_duration}</duration>
               <media>
                 <video>
                   <samplecharacteristics>
@@ -648,15 +716,17 @@ fn generate_premiere_xml(
             </file>
           </clipitem>"#,
             clip_id = clip_id,
-            media_name = seg.source_media_name,
+            media_name = media_name_clean,
             duration_frames = duration_frames,
             timebase = timebase,
+            ntsc = ntsc_str,
             start_frame = start_frame,
             end_frame = end_frame,
             in_frame = in_frame,
             out_frame = out_frame,
             file_id = file_id,
-            media_url = media_url
+            media_url = media_url,
+            file_duration = file_duration
         );
 
         video_clips_xml.push_str(&clip_xml);
@@ -664,13 +734,9 @@ fn generate_premiere_xml(
 
     let mut markers_xml = String::new();
     for seg in segments {
-        let in_frame = (seg.start_time * fps).round() as i64;
-        let out_frame = (seg.end_time * fps).round() as i64;
-        let clean_text = seg.text
-            .replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('"', "&quot;");
+        let in_frame = (seg.start_time * fps).round().max(0.0).min(total_frames as f64) as i64;
+        let out_frame = (seg.end_time * fps).round().max(in_frame as f64).min(total_frames as f64) as i64;
+        let clean_text = clean_xml_text(&seg.text);
         let marker = format!(
             r#"
     <marker>
@@ -696,16 +762,16 @@ fn generate_premiere_xml(
     <duration>{total_frames}</duration>
     <rate>
       <timebase>{timebase}</timebase>
-      <ntsc>FALSE</ntsc>
+      <ntsc>{ntsc}</ntsc>
     </rate>
     <timecode>
       <rate>
         <timebase>{timebase}</timebase>
-        <ntsc>FALSE</ntsc>
+        <ntsc>{ntsc}</ntsc>
       </rate>
       <string>00:00:00:00</string>
       <frame>0</frame>
-      <displayformat>NDF</displayformat>
+      <displayformat>{display_format}</displayformat>
     </timecode>
     {markers_xml}
     <media>
@@ -716,7 +782,7 @@ fn generate_premiere_xml(
             <height>1080</height>
             <rate>
               <timebase>{timebase}</timebase>
-              <ntsc>FALSE</ntsc>
+              <ntsc>{ntsc}</ntsc>
             </rate>
           </samplecharacteristics>
         </format>
@@ -725,27 +791,47 @@ fn generate_premiere_xml(
         </track>
       </video>
       <audio>
+        <numOutputChannels>2</numOutputChannels>
+        <format>
+          <samplecharacteristics>
+            <depth>16</depth>
+            <samplerate>48000</samplerate>
+          </samplecharacteristics>
+        </format>
         <track>
           <clipitem id="voiceover-audio-1">
-            <name>Voiceover_Track</name>
+            <name>{voice_name}</name>
             <duration>{total_frames}</duration>
             <rate>
               <timebase>{timebase}</timebase>
-              <ntsc>FALSE</ntsc>
+              <ntsc>{ntsc}</ntsc>
             </rate>
             <start>0</start>
             <end>{total_frames}</end>
             <in>0</in>
             <out>{total_frames}</out>
             <file id="voice-file-1">
-              <name>Voiceover_Source</name>
+              <name>{voice_name}</name>
               <pathurl>{voice_url}</pathurl>
               <rate>
                 <timebase>{timebase}</timebase>
-                <ntsc>FALSE</ntsc>
+                <ntsc>{ntsc}</ntsc>
               </rate>
               <duration>{total_frames}</duration>
+              <media>
+                <audio>
+                  <samplecharacteristics>
+                    <depth>16</depth>
+                    <samplerate>48000</samplerate>
+                  </samplecharacteristics>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
             </file>
+            <sourcetrack>
+              <mediatype>audio</mediatype>
+              <trackindex>1</trackindex>
+            </sourcetrack>
           </clipitem>
         </track>
       </audio>
@@ -754,9 +840,12 @@ fn generate_premiere_xml(
 </xmeml>"#,
         total_frames = total_frames,
         timebase = timebase,
+        ntsc = ntsc_str,
+        display_format = display_format,
         markers_xml = markers_xml,
         video_clips_xml = video_clips_xml,
-        voice_url = voice_url
+        voice_url = voice_url,
+        voice_name = voice_name_clean
     );
 
     fs::write(output_xml_path, full_xml).map_err(|e| format!("Failed to write XML: {}", e))
