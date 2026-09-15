@@ -17,6 +17,10 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $taskRoot = [IO.Path]::GetFullPath($RuntimeRoot)
 $taskModelRoot = if ($ModelRoot) { [IO.Path]::GetFullPath($ModelRoot) } else { Join-Path $taskRoot 'models' }
+# Rust canonical paths use the Windows extended-path prefix (\\?\). PowerShell's
+# filesystem provider does not consistently accept that prefix in Join-Path.
+if ($taskRoot.StartsWith('\\?\')) { $taskRoot = $taskRoot.Substring(4) }
+if ($taskModelRoot.StartsWith('\\?\')) { $taskModelRoot = $taskModelRoot.Substring(4) }
 $basePython = (Resolve-Path -LiteralPath $PythonExe).Path
 $mediaFolder = (Resolve-Path -LiteralPath $MediaBin).Path
 if ($taskRoot -eq [IO.Path]::GetPathRoot($taskRoot)) { throw 'Choose a dedicated runtime directory, not a drive root.' }
@@ -28,7 +32,7 @@ $pythonIdentity = & $basePython -c 'import sys,struct;print(sys.version_info.maj
 if ($LASTEXITCODE -ne 0 -or $pythonIdentity -notmatch '^3 (11|12) 8$') { throw 'CPython 3.11/3.12 x64 is required.' }
 New-Item -ItemType Directory -Path $taskRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $taskModelRoot -Force | Out-Null
-$progressPath = Join-Path $taskRoot '.synccut-runtime-progress.json'
+$progressPath = [IO.Path]::Combine($taskRoot, '.synccut-runtime-progress.json')
 function Set-SetupProgress([string]$Stage, [string]$Message) {
     [ordered]@{stage=$Stage;message=$Message;currentItem='';modelKey='';downloadedBytes=0;totalBytes=0} |
         ConvertTo-Json -Compress | Set-Content -LiteralPath $progressPath -Encoding utf8
@@ -43,6 +47,10 @@ function Install-RuntimePackages([string[]]$Arguments) {
     & $runtimePython -m pip @Arguments
     if ($LASTEXITCODE -ne 0) { throw 'Package installation failed. Fix the reported error and rerun setup.' }
 }
+$env:PIP_NO_CACHE_DIR = '1'
+# CUDA PyTorch is several GB. Avoid retaining another full wheel in the user's
+# profile cache, and discard a partial wheel left by an interrupted setup.
+& $runtimePython -m pip cache remove torch torchvision torchaudio *> $null
 Set-SetupProgress 'packages' 'Installing local AI and GPU packages…'
 Install-RuntimePackages @('install','pip==25.2')
 Install-RuntimePackages @('install','torch==2.7.1','torchvision==0.22.1','torchaudio==2.7.1','--index-url','https://download.pytorch.org/whl/cu126')

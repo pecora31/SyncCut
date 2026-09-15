@@ -607,13 +607,13 @@ pub fn studio_start_runtime_setup(
     command.arg(engine.join("setup-runtime.ps1"));
     command
         .arg("-RuntimeRoot")
-        .arg(&root)
+        .arg(normalize(&root))
         .arg("-ModelRoot")
-        .arg(&models)
+        .arg(normalize(&models))
         .arg("-PythonExe")
-        .arg(&python)
+        .arg(normalize(&python))
         .arg("-MediaBin")
-        .arg(&media)
+        .arg(normalize(&media))
         .arg("-Profile")
         .arg(&profile);
     if with_text.unwrap_or(false) {
