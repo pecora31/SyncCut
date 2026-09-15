@@ -1,5 +1,11 @@
 # Hướng dẫn sử dụng chi tiết
 
+## Cài local AI trong ứng dụng
+
+Từ SyncCut 0.2.1, nhấn **Set up local AI first** hoặc **Set up AI**. Chọn **Fast · Recommended** cho RTX 3060 12 GB rồi nhấn **Install Fast runtime**. Ứng dụng tự tìm Python, dùng FFmpeg đi kèm, cài package/model và kiểm tra CUDA/media tools.
+
+Nếu Python hiện **Action needed**, nhấn **Get Python for Windows**, cài Python 3.12 x64 rồi **Check computer again**. Có thể hủy và chạy lại để tiếp tục file model đã tải. Xem [hướng dẫn cài lần đầu](https://pecora31.github.io/SyncCut/vi/first-run/) cho từng bước.
+
 ## 1. Chuẩn bị dữ liệu
 
 Đặt voiceover, script và footage vào các thư mục ổn định. Không đổi tên hoặc di chuyển source sau khi đã import. Script nên là UTF-8; voiceover tiếng Anh nên có chất lượng rõ, ít nhạc nền.
