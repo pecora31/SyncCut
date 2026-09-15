@@ -48,6 +48,30 @@ jobs:
           if ((Get-FileHash bin/yt-dlp.exe -Algorithm SHA256).Hash.ToLower() -ne $expected.ToLower()) { throw 'yt-dlp checksum mismatch.' }
           $release.tag_name | Set-Content bin/yt-dlp-release.txt
 
+      - name: Fetch verified FFmpeg tools for the setup assistant
+        run: |
+          $release = Invoke-RestMethod 'https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest'
+          $name = 'ffmpeg-n8.1-latest-win64-gpl-8.1.zip'
+          $archive = $release.assets | Where-Object name -eq $name
+          $checksums = $release.assets | Where-Object name -eq 'checksums.sha256'
+          if (-not $archive -or -not $checksums) { throw 'FFmpeg release assets are incomplete.' }
+          $archivePath = Join-Path $env:RUNNER_TEMP $name
+          $checksumPath = Join-Path $env:RUNNER_TEMP 'ffmpeg-checksums.sha256'
+          Invoke-WebRequest $archive.browser_download_url -OutFile $archivePath
+          Invoke-WebRequest $checksums.browser_download_url -OutFile $checksumPath
+          $line = Get-Content $checksumPath | Where-Object { $_ -match ([regex]::Escape($name) + '$') }
+          if (-not $line) { throw 'No checksum for FFmpeg archive.' }
+          $expected = ($line -split '\s+')[0]
+          if ((Get-FileHash $archivePath -Algorithm SHA256).Hash.ToLower() -ne $expected.ToLower()) { throw 'FFmpeg checksum mismatch.' }
+          $extractRoot = Join-Path $env:RUNNER_TEMP 'synccut-ffmpeg'
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $extractRoot
+          foreach ($name in @('ffmpeg.exe','ffprobe.exe')) {
+            $binary = Get-ChildItem -LiteralPath $extractRoot -Recurse -Filter $name -File | Select-Object -First 1
+            if (-not $binary) { throw "Missing $name in FFmpeg archive." }
+            Copy-Item -LiteralPath $binary.FullName -Destination (Join-Path 'bin' $name)
+          }
+          $release.tag_name | Set-Content bin/ffmpeg-release.txt
+
       - name: Check Rust contracts compile
         run: cargo check --tests --manifest-path src-tauri/Cargo.toml
 
@@ -61,10 +85,11 @@ jobs:
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.2.0' }}
           name: SyncCut ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.2.0' }}
-          body: Candidate editor build. Prepare the local runtime separately and complete customer GPU/Premiere acceptance before publication. No AI model weights are bundled.
+          body: Candidate editor build with an in-app local AI setup assistant. FFmpeg is bundled; Python packages and selected model weights are installed explicitly from the app. Complete customer GPU/Premiere acceptance before delivery.
           draft: true
           prerelease: true
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
             bin/yt-dlp-release.txt
+            bin/ffmpeg-release.txt

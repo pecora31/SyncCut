@@ -57,5 +57,7 @@ if (-not $SkipModels) {
     & $runtimePython @modelArgs
     if ($LASTEXITCODE -ne 0) { throw 'Model installation incomplete. Rerun setup to resume downloads.' }
 }
-Write-Host "Runtime prepared at $taskRoot"
-Write-Host 'Next: run customer-check.ps1 on this machine, then choose this folder in SyncCut > Runtime.'
+& $runtimePython (Join-Path $PSScriptRoot 'preflight.py') --root $taskRoot
+if ($LASTEXITCODE -ne 0) { throw 'Runtime installed, but GPU/media validation failed. Check the NVIDIA driver and rerun setup.' }
+Write-Host "Runtime prepared and validated at $taskRoot"
+Write-Host 'SyncCut can now use this runtime. Complete an actual project and Premiere round-trip before delivery.'

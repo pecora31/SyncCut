@@ -110,6 +110,10 @@
   padding: 0 22px;
   background: #181818;
 }
+.sc-header .sc-runtime-ready {
+  border-color: #4d684d;
+  color: #c7dec7;
+}
 .sc-brand {
   font-size: 22px;
   letter-spacing: -0.8px;
@@ -649,6 +653,9 @@
   color: #999;
   margin: 20px 0;
 }
+.sc-welcome-runtime {
+  margin-left: 8px;
+}
 .sc-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -660,7 +667,7 @@
   padding: 35px;
 }
 .sc-modal {
-  width: 650px;
+  width: 720px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -693,6 +700,161 @@
 .sc-runtime-row > span:last-child {
   color: #999;
   white-space: nowrap;
+}
+.sc-runtime-wizard h3 {
+  margin: 20px 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #d7d7d7;
+}
+.sc-runtime-intro {
+  color: #b5b5b5;
+  max-width: 620px;
+}
+.sc-runtime-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  margin: 18px 0;
+  background: #383838;
+  border: 1px solid #383838;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.sc-runtime-steps span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #181818;
+  color: #777;
+  padding: 10px 12px;
+  font-size: 11px;
+}
+.sc-runtime-steps span.active {
+  color: #eee;
+  background: #242424;
+}
+.sc-runtime-steps b {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #555;
+  border-radius: 50%;
+  font-size: 10px;
+}
+.sc-runtime-steps .active b {
+  background: #ddd;
+  color: #111;
+  border-color: #ddd;
+}
+.sc-profile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.sc-profile-grid button {
+  text-align: left;
+  white-space: normal;
+  padding: 14px;
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+.sc-profile-grid button.selected {
+  border-color: #ddd;
+  background: #303030;
+  box-shadow: inset 0 0 0 1px #ddd;
+}
+.sc-profile-grid button span {
+  color: #bbb;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.sc-runtime-option {
+  display: grid !important;
+  grid-template-columns: auto 1fr;
+  margin: 14px 0 18px !important;
+}
+.sc-runtime-option small {
+  grid-column: 2;
+}
+.sc-runtime-checks {
+  border: 1px solid #383838;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.sc-runtime-checks > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  background: #191919;
+}
+.sc-runtime-checks > div + div {
+  border-top: 1px solid #333;
+}
+.sc-runtime-checks > div > b {
+  color: #999;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.sc-runtime-checks .ready > b {
+  color: #b8d7b8;
+}
+.sc-runtime-checks .missing > b {
+  color: #e1b3a9;
+}
+.sc-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #7d4942;
+}
+.ready .sc-status-dot {
+  background: #739873;
+}
+.sc-setup-result {
+  border: 1px solid #4a4a4a;
+  border-radius: 5px;
+  padding: 12px;
+  margin: 14px 0;
+  background: #191919;
+}
+.sc-setup-result.completed {
+  border-color: #4e6b4e;
+}
+.sc-setup-result.failed {
+  border-color: #754b44;
+}
+.sc-setup-result progress {
+  width: 100%;
+  height: 4px;
+  margin: 4px 0 10px;
+}
+.sc-install-runtime {
+  min-height: 42px;
+}
+.sc-runtime-advanced {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #383838;
+}
+.sc-runtime-advanced summary {
+  color: #999;
+  cursor: pointer;
+  font-size: 12px;
+}
+@media (max-width: 700px) {
+  .sc-profile-grid {
+    grid-template-columns: 1fr;
+  }
+  .sc-runtime-steps span {
+    padding: 8px;
+  }
 }
 @media (max-width: 1200px) {
   .sc-workspace {

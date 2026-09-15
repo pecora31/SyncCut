@@ -2,7 +2,9 @@
 
 ## Before you start
 
-Use the customer runtime package and run the setup script once. On a machine with 32 GB RAM and an RTX 3060 12 GB, start with the **Fast** profile when Premiere Pro, Chrome, or a game is running. Use **Quality** for a dedicated processing session.
+Open SyncCut and select **Set up local AI first**. The setup assistant detects Python and bundled media tools, installs packages, downloads the selected models, and remembers the runtime location. On a machine with 32 GB RAM and an RTX 3060 12 GB, choose **Fast · Recommended** when Premiere Pro, Chrome, or a game is running. Use **Quality** for a dedicated processing session.
+
+If Python shows **Action needed**, install 64-bit Python 3.12, reopen SyncCut, and select **Check again**. A cancelled or interrupted model download can be continued with **Continue installation**.
 
 Create one project folder per job. Keep the original footage and voiceover in stable locations; moving them later creates offline media in the export.
 

@@ -1,47 +1,38 @@
-# Cài đặt lần đầu
+# Cài đặt và chạy lần đầu
 
-## 1. Cài editor
+## 1. Cài SyncCut
 
-Tải `SyncCut_0.2.0_x64-setup.exe` hoặc MSI từ trang Releases. Installer chỉ chứa ứng dụng, engine và script; không tự tải model AI.
+Tải bộ cài mới nhất từ trang Releases và cài như ứng dụng Windows thông thường. SyncCut đã kèm FFmpeg/FFprobe; model AI được tải ở bước tiếp theo để tránh làm bộ cài editor quá lớn.
 
-## 2. Chuẩn bị runtime
+## 2. Mở trình cài AI
 
-Trên máy khách, cài NVIDIA driver và CPython 3.11/3.12 x64. Giải nén runtime kit hoặc lấy thư mục `engine` đi kèm release. Mở PowerShell trong thư mục đó:
+Khởi động SyncCut và nhấn **Set up local AI first** ở màn hình chào hoặc **Set up AI** trên thanh đầu ứng dụng.
 
-```powershell
-.\setup-runtime.ps1 `
-  -RuntimeRoot 'D:\SyncCutRuntime' `
-  -PythonExe 'C:\Python312\python.exe' `
-  -MediaBin 'D:\Tools\ffmpeg\bin' `
-  -Profile fast
-```
+Trình cài tự kiểm tra GPU NVIDIA, Python 3.11/3.12 bản 64-bit, FFmpeg/FFprobe đi kèm, thư mục runtime và các model đã có. Mục có nhãn **Ready** không cần xử lý. Nếu Python hiện **Action needed**, nhấn **Get Python for Windows**, cài Python 3.12 x64 rồi nhấn **Check computer again**.
 
-`-Profile fast` cài bộ nhẹ hơn. Dùng `-Profile both` nếu muốn có cả Quality; thêm `-WithTextIndex` để cài BGE cho việc tìm caption đã cache. Script cài package và model bằng revision cố định, tạo marker SHA-256 và có thể chạy lại để tiếp tục.
+## 3. Chọn model
 
-!!! danger "Không di chuyển virtual environment"
-    Runtime là venv gắn với bản Python đã dùng để tạo. Không copy nguyên thư mục sang máy khác. Nếu đổi máy, chạy setup lại.
+Chọn **Fast · Recommended** cho máy RTX 3060 12 GB. Profile này phù hợp khi vẫn mở Premiere, Chrome hoặc ứng dụng khác. Chọn **Quality** khi SyncCut được dùng GPU riêng và chấp nhận thời gian xử lý lâu hơn.
 
-## 3. Kiểm tra runtime
+Tùy chọn **Install optional text search model** chỉ cần thiết khi muốn tìm trong caption đã cache; quy trình dựng thông thường không cần bật.
 
-```powershell
-.\customer-check.ps1 -RuntimeRoot 'D:\SyncCutRuntime' -Profile fast
-```
+## 4. Cài tự động
 
-Lệnh này kiểm tra package, CUDA, FFmpeg/FFprobe, marker và hash model rồi chạy các contract test nhẹ. Nó không đánh giá chất lượng nhận dạng hoặc độ chính xác cảnh.
+Nhấn **Install Fast runtime** hoặc **Install Quality runtime**. Giữ SyncCut mở và giữ kết nối mạng trong lúc tải package/model. Có thể nhấn **Open install log** để xem chi tiết. Cuối quá trình cài, SyncCut kiểm tra package, CUDA và media tools trước khi báo sẵn sàng.
 
-## 4. Chọn runtime trong app
+Nếu nhấn **Cancel installation** hoặc mất mạng, file đã tải hoàn tất vẫn được giữ. Mở lại cửa sổ và nhấn **Continue installation** để tiếp tục.
 
-Mở SyncCut → **Runtime** → **Choose runtime folder** → chọn `D:\SyncCutRuntime`. Các dòng `Python`, `FFmpeg / FFprobe` và model cần hiện `Found`/`Installed`.
+Khi hiện **Runtime ready**, nút trên thanh đầu đổi thành **AI ready**. Lúc này có thể tạo project và bắt đầu xử lý.
 
-Nếu model hiển thị `Missing`:
+!!! danger "Không sao chép runtime sang máy khác"
+    Runtime chứa môi trường Python gắn với máy đã cài. Khi đổi máy, hãy chạy trình cài trong SyncCut trên máy mới.
 
-1. Đóng các job đang chạy.
-2. Chạy lại `manage_models.py verify` để biết file nào thiếu.
-3. Chạy lại setup với đúng profile.
-4. Nhấn **Refresh** trong cửa sổ Runtime.
+## 5. Dùng runtime đã chuẩn bị sẵn
 
-## 5. Project đầu tiên
+Người dùng kỹ thuật có thể mở **Advanced: use an existing runtime pack** → **Choose existing folder**. SyncCut vẫn kiểm tra Python, FFmpeg và marker của từng model trước khi cho chạy job.
 
-Chọn thư mục riêng cho project. SyncCut tạo `.synccut/project.sqlite`, cache và log trong đó. Không đặt project trong thư mục tạm hoặc thư mục đồng bộ đám mây khi đang xử lý; SQLite/WAL cần filesystem ổn định.
+## 6. Project đầu tiên
 
-Hãy bắt đầu bằng voiceover 1–3 phút, một script rõ ràng và 3–5 footage trước khi chạy project lớn. Đọc [Tạo project và import nguồn](sources.md) để tránh gán nhầm role.
+Chọn thư mục riêng cho project. SyncCut tạo `.synccut/project.sqlite`, cache và log trong đó. Không đặt project trong thư mục tạm hoặc thư mục đồng bộ đám mây khi đang xử lý.
+
+Nên thử lần đầu với voiceover 1–3 phút, script rõ ràng và 3–5 footage. Đọc [Tạo project và import nguồn](sources.md) để tránh gán nhầm role.

@@ -6,7 +6,7 @@ Trang này giải thích các khu vực và nút chính trên giao diện SyncCu
 
 ![Tổng quan giao diện SyncCut](../assets/ui/overview.svg)
 
-**A — Thanh điều khiển dự án:** `Runtime` mở chọn runtime/model pack; `Open project` mở project đã có. Hãy kiểm tra runtime trước khi chạy job AI.
+**A — Thanh điều khiển dự án:** `Set up AI` mở trình cài runtime/model; khi đủ thành phần nút đổi thành `AI ready`. `Open project` mở hoặc tạo project.
 
 **B — Thanh quy trình:** bốn bước đi theo thứ tự `Sources → Recording → Scenes → Timeline`. Có thể quay lại bước trước để sửa dữ liệu; khi đang có job chạy, một số nút sẽ bị khóa.
 

@@ -2,12 +2,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { safeConvertFileSrc } from "../utils/mediaUtils";
 import { Monitor } from "./Monitor";
 import { YouTubeDownloadModal } from "../components/workspace/YouTubeDownloadModal";
 import { BeatEditor, Candidates } from "./Review";
-import { Asset, Beat, clock, fpsOf, Job, Project, Runtime } from "./types";
+import {
+  Asset,
+  Beat,
+  clock,
+  fpsOf,
+  Job,
+  Project,
+  Runtime,
+  RuntimePrerequisites,
+  RuntimeSetup,
+} from "./types";
 import "./studio.css";
 
 const steps = ["Sources", "Recording", "Scenes", "Timeline"] as const;
@@ -40,6 +50,14 @@ export default function Studio() {
   const chain = useRef<Promise<void>>(Promise.resolve());
   const [runtime, setRuntime] = useState<Runtime | null>(null);
   const [runtimeOpen, setRuntimeOpen] = useState(false);
+  const [runtimePrerequisites, setRuntimePrerequisites] =
+    useState<RuntimePrerequisites | null>(null);
+  const [runtimeSetup, setRuntimeSetup] = useState<RuntimeSetup | null>(null);
+  const [runtimeProfile, setRuntimeProfile] = useState<"fast" | "quality">(
+    "fast",
+  );
+  const [runtimeTextIndex, setRuntimeTextIndex] = useState(false);
+  const [runtimeChecking, setRuntimeChecking] = useState(false);
   const [source, setSource] = useState<Asset | null>(null);
   const [sourceStart, setSourceStart] = useState(0);
   const monitorElement = useRef<HTMLDivElement>(null);
@@ -126,6 +144,49 @@ export default function Studio() {
       unlisten?.();
     };
   }, [adopt, receiveJob]);
+  useEffect(() => {
+    if (!runtimeOpen) return;
+    let disposed = false;
+    let lastStatus = "";
+    const refresh = async () => {
+      try {
+        const [nextRuntime, prerequisites, setup] = await Promise.all([
+          invoke<Runtime>("studio_runtime", { pick: false }),
+          invoke<RuntimePrerequisites>("studio_runtime_prerequisites"),
+          invoke<RuntimeSetup | null>("studio_runtime_setup_status"),
+        ]);
+        if (!disposed) {
+          setRuntime(nextRuntime);
+          setRuntimePrerequisites(prerequisites);
+          setRuntimeSetup(setup);
+          lastStatus = setup?.status ?? "";
+        }
+      } catch (e) {
+        if (!disposed) setError(errorText(e));
+      } finally {
+        if (!disposed) setRuntimeChecking(false);
+      }
+    };
+    setRuntimeChecking(true);
+    void refresh();
+    const timer = window.setInterval(() => {
+      invoke<RuntimeSetup | null>("studio_runtime_setup_status")
+        .then(async (setup) => {
+          if (disposed) return;
+          setRuntimeSetup(setup);
+          if (setup?.status === "completed" && lastStatus !== "completed") {
+            const nextRuntime = await invoke<Runtime>("studio_runtime", { pick: false });
+            if (!disposed) setRuntime(nextRuntime);
+          }
+          lastStatus = setup?.status ?? "";
+        })
+        .catch((e) => !disposed && setError(errorText(e)));
+    }, 2000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [runtimeOpen]);
   useEffect(() => {
     if (job?.status !== "running") return;
     const timer = setInterval(() => {
@@ -330,7 +391,40 @@ export default function Studio() {
   }
   async function pickRuntime(pick: boolean) {
     try {
-      setRuntime(await invoke<Runtime>("studio_runtime", { pick }));
+      setRuntimeChecking(true);
+      const [nextRuntime, prerequisites] = await Promise.all([
+        invoke<Runtime>("studio_runtime", { pick }),
+        invoke<RuntimePrerequisites>("studio_runtime_prerequisites"),
+      ]);
+      setRuntime(nextRuntime);
+      setRuntimePrerequisites(prerequisites);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setRuntimeChecking(false);
+    }
+  }
+  async function installRuntime() {
+    try {
+      setRuntimeChecking(true);
+      setRuntimeSetup(
+        await invoke<RuntimeSetup>("studio_start_runtime_setup", {
+          profile: runtimeProfile,
+          withText: runtimeTextIndex,
+        }),
+      );
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setRuntimeChecking(false);
+    }
+  }
+  async function cancelRuntimeInstall() {
+    try {
+      await invoke("studio_cancel_runtime_setup");
+      setRuntimeSetup(
+        await invoke<RuntimeSetup | null>("studio_runtime_setup_status"),
+      );
     } catch (e) {
       setError(errorText(e));
     }
@@ -448,6 +542,14 @@ export default function Studio() {
   const totalFrames = project
     ? Math.ceil(project.duration * fpsOf(project) - 1e-7)
     : 0;
+  const activeProfile = project?.settings.profile ?? runtimeProfile;
+  const runtimeReady = Boolean(
+    runtime?.pythonReady &&
+      runtime?.binariesReady &&
+      ["align_en", "visual", `asr_${activeProfile}`, `vlm_${activeProfile}`].every(
+        (key) => runtime.models.some((model) => model.key === key && model.ready),
+      ),
+  );
   const openFile = (path: string) =>
     openPath(path).catch((e) => setError(errorText(e)));
 
@@ -475,7 +577,12 @@ export default function Studio() {
         >
           Open project
         </button>
-        <button onClick={() => setRuntimeOpen(true)}>Runtime</button>
+        <button
+          className={runtimeReady ? "sc-runtime-ready" : ""}
+          onClick={() => setRuntimeOpen(true)}
+        >
+          {runtimeReady ? "AI ready" : "Set up AI"}
+        </button>
       </header>
       {error && (
         <div role="alert" className="sc-error">
@@ -506,6 +613,11 @@ export default function Studio() {
           >
             Choose a project folder
           </button>
+          {!runtimeReady && (
+            <button className="sc-welcome-runtime" onClick={() => setRuntimeOpen(true)}>
+              Set up local AI first
+            </button>
+          )}
           <p className="sc-muted">
             Processing stays on this computer. Project data is saved inside the
             selected folder.
@@ -1368,49 +1480,132 @@ export default function Studio() {
             aria-labelledby="runtime-title"
           >
             <div className="sc-panel-head">
-              <h2 id="runtime-title">Local runtime</h2>
+              <div>
+                <span className="sc-eyebrow">FIRST-RUN ASSISTANT</span>
+                <h2 id="runtime-title">Set up local AI</h2>
+              </div>
               <button onClick={() => setRuntimeOpen(false)}>Close</button>
             </div>
-            <div className="sc-panel-body">
-              <p>
-                Choose the runtime pack prepared on the customer computer.
-                Models are loaded locally; the editor never downloads them
-                automatically.
+            <div className="sc-panel-body sc-runtime-wizard">
+              <p className="sc-runtime-intro">
+                SyncCut can prepare everything automatically. Choose how you
+                normally use this computer, then leave the app open while the
+                models download.
               </p>
-              <p className="sc-path">
-                {runtime?.root ?? "No runtime selected"}
-              </p>
-              <div className="sc-row">
+
+              <div className="sc-runtime-steps" aria-label="Setup progress">
+                <span className="active"><b>1</b> Check computer</span>
+                <span className={runtimeSetup ? "active" : ""}><b>2</b> Install</span>
+                <span className={runtimeSetup?.status === "completed" ? "active" : ""}><b>3</b> Ready</span>
+              </div>
+
+              <h3>Choose a model pack</h3>
+              <div className="sc-profile-grid">
                 <button
-                  disabled={job?.status === "running"}
-                  onClick={() => pickRuntime(true)}
+                  className={runtimeProfile === "fast" ? "selected" : ""}
+                  onClick={() => setRuntimeProfile("fast")}
+                  disabled={runtimeSetup?.status === "running"}
                 >
-                  Choose runtime folder
+                  <strong>Fast · Recommended</strong>
+                  <span>Best for RTX 3060 12 GB while Premiere or Chrome is open.</span>
+                  <small>Faster processing · lower GPU use</small>
                 </button>
-                <button onClick={() => pickRuntime(false)}>Refresh</button>
+                <button
+                  className={runtimeProfile === "quality" ? "selected" : ""}
+                  onClick={() => setRuntimeProfile("quality")}
+                  disabled={runtimeSetup?.status === "running"}
+                >
+                  <strong>Quality</strong>
+                  <span>Use when SyncCut has the GPU to itself.</span>
+                  <small>Better model · slower · more VRAM</small>
+                </button>
               </div>
-              <div className="sc-runtime-row">
-                <span>Python</span>
-                <span>{runtime?.pythonReady ? "Found" : "Missing"}</span>
-              </div>
-              <div className="sc-runtime-row">
-                <span>FFmpeg / FFprobe</span>
-                <span>{runtime?.binariesReady ? "Found" : "Missing"}</span>
-              </div>
-              {runtime?.models.map((m) => (
-                <div className="sc-runtime-row" key={m.key}>
-                  <span>
-                    {m.name}
-                    <small>{m.key}</small>
-                  </span>
-                  <span>{m.ready ? "Installed" : "Missing"}</span>
+              <label className="sc-check sc-runtime-option">
+                <input
+                  type="checkbox"
+                  checked={runtimeTextIndex}
+                  disabled={runtimeSetup?.status === "running"}
+                  onChange={(e) => setRuntimeTextIndex(e.target.checked)}
+                />
+                Install optional text search model
+                <small>Useful for searching existing captions; not required for the normal workflow.</small>
+              </label>
+
+              <div className="sc-runtime-checks">
+                <div className={runtimePrerequisites?.gpuReady ? "ready" : "missing"}>
+                  <span className="sc-status-dot" />
+                  <span><strong>NVIDIA GPU</strong><small>{runtimePrerequisites?.gpuReady ? runtimePrerequisites.gpuDescription : "Not detected · update the NVIDIA driver before processing"}</small></span>
+                  <b>{runtimePrerequisites?.gpuReady ? "Detected" : "Check driver"}</b>
                 </div>
-              ))}
-              <p className="sc-muted">
-                Installation markers indicate a prepared pack. CUDA
-                compatibility, peak memory and model output still require
-                validation on the target computer.
-              </p>
+                <div className={runtimePrerequisites?.pythonReady ? "ready" : "missing"}>
+                  <span className="sc-status-dot" />
+                  <span><strong>Python 3.11 / 3.12</strong><small>{runtimePrerequisites?.pythonReady ? runtimePrerequisites.pythonPath : "Not found · install 64-bit Python, then check again"}</small></span>
+                  <b>{runtimePrerequisites?.pythonReady ? "Ready" : "Action needed"}</b>
+                </div>
+                <div className={runtimePrerequisites?.mediaReady ? "ready" : "missing"}>
+                  <span className="sc-status-dot" />
+                  <span><strong>Media tools</strong><small>{runtimePrerequisites?.mediaReady ? "FFmpeg and FFprobe included with SyncCut" : "Files missing · reinstall SyncCut"}</small></span>
+                  <b>{runtimePrerequisites?.mediaReady ? "Ready" : "Action needed"}</b>
+                </div>
+              </div>
+              <button className="sc-wide" disabled={runtimeChecking} onClick={() => pickRuntime(false)}>
+                {runtimeChecking ? "Checking computer…" : "Check computer again"}
+              </button>
+              <p className="sc-muted">Install location</p>
+              {!runtimePrerequisites?.pythonReady && (
+                <div className="sc-row">
+                  <button onClick={() => openUrl("https://www.python.org/downloads/windows/").catch((e) => setError(errorText(e)))}>Get Python for Windows</button>
+                  <span className="sc-muted">Choose Python 3.12 · Windows installer (64-bit).</span>
+                </div>
+              )}
+              <p className="sc-path">{runtimePrerequisites?.installRoot ?? "Checking…"}</p>
+
+              {runtimeSetup && (
+                <div className={`sc-setup-result ${runtimeSetup.status}`} role="status">
+                  <div className="sc-between sc-row">
+                    <strong>{runtimeSetup.status === "running" ? "Installing runtime" : runtimeSetup.status === "completed" ? "Runtime ready" : runtimeSetup.status === "cancelled" ? "Installation cancelled" : "Installation needs attention"}</strong>
+                    <span>{runtimeSetup.profile === "fast" ? "Fast" : "Quality"}</span>
+                  </div>
+                  <p>{runtimeSetup.message}</p>
+                  {runtimeSetup.status === "running" && <progress />}
+                  <div className="sc-row">
+                    {runtimeSetup.logPath && <button onClick={() => openFile(runtimeSetup.logPath)}>Open install log</button>}
+                    {runtimeSetup.status === "running" && <button onClick={cancelRuntimeInstall}>Cancel installation</button>}
+                  </div>
+                </div>
+              )}
+
+              <button
+                className="sc-primary sc-wide sc-install-runtime"
+                disabled={
+                  runtimeChecking ||
+                  !runtimePrerequisites?.pythonReady ||
+                  !runtimePrerequisites?.mediaReady ||
+                  runtimeSetup?.status === "running" ||
+                  job?.status === "running"
+                }
+                onClick={installRuntime}
+              >
+                {runtimeSetup?.status === "failed" || runtimeSetup?.status === "cancelled"
+                  ? "Continue installation"
+                  : runtimeSetup?.status === "completed"
+                    ? "Repair / reinstall runtime"
+                    : `Install ${runtimeProfile === "fast" ? "Fast" : "Quality"} runtime`}
+              </button>
+
+              <details className="sc-runtime-advanced">
+                <summary>Advanced: use an existing runtime pack</summary>
+                <p className="sc-path">{runtime?.root ?? "No runtime selected"}</p>
+                <div className="sc-row">
+                  <button disabled={job?.status === "running" || runtimeSetup?.status === "running"} onClick={() => pickRuntime(true)}>Choose existing folder</button>
+                  <button onClick={() => pickRuntime(false)}>Check again</button>
+                </div>
+                <div className="sc-runtime-row"><span>Python</span><span>{runtime?.pythonReady ? "Ready" : "Missing"}</span></div>
+                <div className="sc-runtime-row"><span>FFmpeg / FFprobe</span><span>{runtime?.binariesReady ? "Ready" : "Missing"}</span></div>
+                {runtime?.models.map((m) => (
+                  <div className="sc-runtime-row" key={m.key}><span>{m.name}<small>{m.key}</small></span><span>{m.ready ? "Installed" : "Missing"}</span></div>
+                ))}
+              </details>
             </div>
           </section>
         </div>

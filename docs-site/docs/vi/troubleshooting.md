@@ -4,7 +4,9 @@
 
 **Triệu chứng:** Runtime báo Python/FFmpeg/model Missing hoặc nút stage báo runtime incomplete.
 
-**Cách xử lý:** kiểm tra đúng thư mục có `python/Scripts/python.exe`, `bin/ffmpeg.exe`, `bin/ffprobe.exe`, chạy `customer-check.ps1`, rồi Refresh. Model marker phải khớp revision trong `engine/models.json`.
+**Cách xử lý:** mở **Set up AI**. Nếu Python hoặc Media tools hiện **Action needed**, xử lý mục đó rồi nhấn **Check again**. Nếu model thiếu, chọn đúng profile và nhấn **Repair / reinstall runtime**. Dùng **Open install log** nếu quá trình cài báo lỗi.
+
+Người dùng kỹ thuật dùng runtime ngoài có thể mở phần Advanced và kiểm tra thư mục có `python/Scripts/python.exe`, `bin/ffmpeg.exe`, `bin/ffprobe.exe`; marker model phải khớp revision trong `engine/models.json`.
 
 ## CUDA unavailable / thiếu VRAM
 

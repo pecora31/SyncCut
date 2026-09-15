@@ -21,6 +21,17 @@ use tauri::{Emitter, Manager};
 #[derive(Default)]
 pub struct StudioState {
     pub job: Mutex<Option<Job>>,
+    pub runtime_setup: Mutex<Option<RuntimeSetup>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeSetup {
+    pub status: String,
+    pub message: String,
+    pub profile: String,
+    pub pid: u32,
+    pub log_path: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -147,6 +158,19 @@ pub fn studio_open_project(app: tauri::AppHandle) -> Result<Option<Project>, Str
         .optional()
         .map_err(|e| e.to_string())?;
     if exists.is_none() {
+        let mut settings = Settings::default();
+        settings.profile = if config(&app)["runtimeProfile"] == "quality" {
+            "quality"
+        } else {
+            "fast"
+        }
+        .into();
+        settings.resource = if settings.profile == "fast" {
+            "shared"
+        } else {
+            "focused"
+        }
+        .into();
         let project = Project {
             schema_version: 2,
             id: uuid::Uuid::new_v4().to_string(),
@@ -161,7 +185,7 @@ pub fn studio_open_project(app: tauri::AppHandle) -> Result<Option<Project>, Str
             voice_id: None,
             script_id: None,
             visual_ids: vec![],
-            settings: Settings::default(),
+            settings,
             duration: 0.0,
             words: vec![],
             beats: vec![],
@@ -344,6 +368,237 @@ pub fn studio_runtime(app: tauri::AppHandle, pick: Option<bool>) -> Result<Value
         "modelDir":normalize(&root.join("models")),"engineDir":normalize(&engine),"models":models}),
     )
 }
+
+fn command_output(mut command: Command) -> Option<String> {
+    hidden(&mut command);
+    let output = command.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!value.is_empty()).then_some(value)
+}
+
+fn detected_python() -> Option<PathBuf> {
+    for version in ["-3.12", "-3.11"] {
+        let mut command = Command::new("py.exe");
+        command.args([
+            version,
+            "-c",
+            "import sys; print(sys.executable if sys.maxsize > 2**32 else '')",
+        ]);
+        if let Some(value) = command_output(command) {
+            let path = PathBuf::from(value.lines().last()?.trim());
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+    for name in ["python.exe", "python3.exe"] {
+        let mut command = Command::new(name);
+        command.args([
+            "-c",
+            "import sys; print(sys.executable if sys.version_info[:2] in [(3,11),(3,12)] and sys.maxsize > 2**32 else '')",
+        ]);
+        if let Some(value) = command_output(command) {
+            let path = PathBuf::from(value.lines().last()?.trim());
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+fn detected_media_bin(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let mut candidates = vec![];
+    if let Ok(resource) = app.path().resource_dir() {
+        candidates.push(resource.join("bin"));
+    }
+    #[cfg(debug_assertions)]
+    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../bin"));
+    if let Some(ffmpeg) = command_output({
+        let mut command = Command::new("where.exe");
+        command.arg("ffmpeg.exe");
+        command
+    }) {
+        if let Some(parent) = PathBuf::from(ffmpeg.lines().next()?.trim()).parent() {
+            candidates.push(parent.to_path_buf());
+        }
+    }
+    candidates
+        .into_iter()
+        .find(|folder| folder.join("ffmpeg.exe").is_file() && folder.join("ffprobe.exe").is_file())
+}
+
+#[tauri::command]
+pub fn studio_runtime_prerequisites(app: tauri::AppHandle) -> Result<Value, String> {
+    let python = detected_python();
+    let media = detected_media_bin(&app);
+    let gpu = command_output({
+        let mut command = Command::new("nvidia-smi.exe");
+        command.args(["--query-gpu=name,memory.total", "--format=csv,noheader"]);
+        command
+    });
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("runtime");
+    Ok(json!({
+        "pythonReady": python.is_some(),
+        "pythonPath": python.as_ref().map(|p| normalize(p)).unwrap_or_default(),
+        "mediaReady": media.is_some(),
+        "mediaPath": media.as_ref().map(|p| normalize(p)).unwrap_or_default(),
+        "gpuReady": gpu.is_some(),
+        "gpuDescription": gpu.unwrap_or_default(),
+        "installRoot": normalize(&root)
+    }))
+}
+
+#[tauri::command]
+pub fn studio_runtime_setup_status(
+    state: tauri::State<StudioState>,
+) -> Result<Option<RuntimeSetup>, String> {
+    state
+        .runtime_setup
+        .lock()
+        .map_err(|e| e.to_string())
+        .map(|value| value.clone())
+}
+
+#[tauri::command]
+pub fn studio_start_runtime_setup(
+    app: tauri::AppHandle,
+    state: tauri::State<StudioState>,
+    profile: String,
+    with_text: Option<bool>,
+) -> Result<RuntimeSetup, String> {
+    if !["fast", "quality"].contains(&profile.as_str()) {
+        return Err("Choose either the Fast or Quality model pack.".into());
+    }
+    if state
+        .job
+        .lock()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .is_some_and(|job| job.status == "running")
+    {
+        return Err("Pause the current processing job before installing a runtime.".into());
+    }
+    let mut setup_guard = state.runtime_setup.lock().map_err(|e| e.to_string())?;
+    if setup_guard
+        .as_ref()
+        .is_some_and(|setup| setup.status == "running")
+    {
+        return Err("Runtime installation is already running.".into());
+    }
+    let python = detected_python().ok_or(
+        "Python 3.11 or 3.12 (64-bit) was not found. Install Python, then press Check again.",
+    )?;
+    let media = detected_media_bin(&app)
+        .ok_or("FFmpeg files are missing from this SyncCut installation. Reinstall SyncCut.")?;
+    let engine = engine_directory(&app)?;
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("runtime");
+    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    let log_path = root.join("runtime-install.log");
+    let stdout = fs::File::create(&log_path).map_err(|e| e.to_string())?;
+    let stderr = stdout.try_clone().map_err(|e| e.to_string())?;
+    let mut command = Command::new("powershell.exe");
+    command.args([
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+    ]);
+    command.arg(engine.join("setup-runtime.ps1"));
+    command.arg("-RuntimeRoot").arg(&root);
+    command.arg("-PythonExe").arg(&python);
+    command.arg("-MediaBin").arg(&media);
+    command.arg("-Profile").arg(&profile);
+    if with_text.unwrap_or(false) {
+        command.arg("-WithTextIndex");
+    }
+    command
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr));
+    hidden(&mut command);
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Cannot start runtime installer: {e}"))?;
+    let setup = RuntimeSetup {
+        status: "running".into(),
+        message: "Installing Python packages and downloading the selected models…".into(),
+        profile: profile.clone(),
+        pid: child.id(),
+        log_path: normalize(&log_path),
+    };
+    *setup_guard = Some(setup.clone());
+    drop(setup_guard);
+    let setup_app = app.clone();
+    std::thread::spawn(move || {
+        let result = child.wait();
+        let studio = setup_app.state::<StudioState>();
+        if let Ok(mut guard) = studio.runtime_setup.lock() {
+            if guard
+                .as_ref()
+                .is_some_and(|current| current.status == "cancelled")
+            {
+                return;
+            }
+            let mut success = result.as_ref().is_ok_and(|status| status.success());
+            let mut message =
+                "Installation did not finish. Open the log for details, then try again."
+                    .to_string();
+            if success {
+                let mut cfg = config(&setup_app);
+                cfg["runtimeRoot"] = json!(normalize(&root));
+                cfg["runtimeProfile"] = json!(profile);
+                match save_config(&setup_app, cfg) {
+                    Ok(()) => message = "Runtime is ready. You can start processing.".into(),
+                    Err(error) => {
+                        success = false;
+                        message = format!("Runtime installed, but its location could not be saved: {error}. Choose it in Advanced.");
+                    }
+                }
+            }
+            let finished = RuntimeSetup {
+                status: if success { "completed" } else { "failed" }.into(),
+                message,
+                profile,
+                pid: 0,
+                log_path: normalize(&log_path),
+            };
+            *guard = Some(finished.clone());
+            let _ = setup_app.emit("studio-runtime-setup", finished);
+        };
+    });
+    Ok(setup)
+}
+
+#[tauri::command]
+pub fn studio_cancel_runtime_setup(
+    app: tauri::AppHandle,
+    state: tauri::State<StudioState>,
+) -> Result<(), String> {
+    let mut guard = state.runtime_setup.lock().map_err(|e| e.to_string())?;
+    let setup = guard
+        .as_mut()
+        .filter(|setup| setup.status == "running")
+        .ok_or("Runtime installation is not running.")?;
+    terminate(setup.pid)?;
+    setup.pid = 0;
+    setup.status = "cancelled".into();
+    setup.message =
+        "Installation cancelled. Completed downloads are kept for the next attempt.".into();
+    let _ = app.emit("studio-runtime-setup", setup.clone());
+    Ok(())
+}
 fn engine_directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let bundled = app
         .path()
@@ -492,6 +747,15 @@ pub fn studio_start_job(
     expected_revision: i64,
     allow_gaps: Option<bool>,
 ) -> Result<Job, String> {
+    if state
+        .runtime_setup
+        .lock()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .is_some_and(|setup| setup.status == "running")
+    {
+        return Err("Wait for runtime installation to finish before processing media.".into());
+    }
     let mut guard = state.job.lock().map_err(|e| e.to_string())?;
     if guard.as_ref().is_some_and(|j| j.status == "running") {
         return Err("Only one GPU job can run at a time.".into());
@@ -780,6 +1044,15 @@ pub fn shutdown(app: &tauri::AppHandle) {
             job.status = "interrupted".into();
             job.message = "Session closed. Resume from saved checkpoints.".into();
             save_job(job);
+        }
+    };
+    if let Ok(mut guard) = state.runtime_setup.lock() {
+        if let Some(setup) = guard.as_mut().filter(|setup| setup.status == "running") {
+            let _ = terminate(setup.pid);
+            setup.pid = 0;
+            setup.status = "cancelled".into();
+            setup.message =
+                "App closed during installation. Run setup again to continue downloads.".into();
         }
     };
 }

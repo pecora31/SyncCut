@@ -128,6 +128,22 @@ export interface Runtime {
   engineDir: string;
   models: { key: string; name: string; ready: boolean }[];
 }
+export interface RuntimePrerequisites {
+  pythonReady: boolean;
+  pythonPath: string;
+  mediaReady: boolean;
+  mediaPath: string;
+  gpuReady: boolean;
+  gpuDescription: string;
+  installRoot: string;
+}
+export interface RuntimeSetup {
+  status: "running" | "completed" | "failed" | "cancelled";
+  message: string;
+  profile: "fast" | "quality";
+  pid: number;
+  logPath: string;
+}
 export const fpsOf = (p: Project) => p.settings.fpsNum / p.settings.fpsDen;
 export function clock(s: number) {
   const v = Math.max(0, s || 0);
