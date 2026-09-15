@@ -34,6 +34,17 @@ function clearSpeech(p: Project) {
   p.duration = 0;
 }
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const bytes = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+  return `${(value / 1024 ** index).toFixed(index < 2 ? 0 : 1)} ${units[index]}`;
+};
+const stageLabel = (stage: string) => ({
+  python: "Creating local Python environment", packages: "Installing local AI packages",
+  media: "Preparing media tools", models: "Downloading AI models", verify: "Checking GPU and media tools",
+  ready: "Ready", starting: "Preparing installation",
+}[stage] ?? "Installing runtime");
 
 export default function Studio() {
   const [project, setProject] = useState<Project | null>(null);
@@ -58,6 +69,8 @@ export default function Studio() {
   );
   const [runtimeTextIndex, setRuntimeTextIndex] = useState(false);
   const [runtimeChecking, setRuntimeChecking] = useState(false);
+  const [runtimeInstallRoot, setRuntimeInstallRoot] = useState("");
+  const [modelInstallRoot, setModelInstallRoot] = useState("");
   const [source, setSource] = useState<Asset | null>(null);
   const [sourceStart, setSourceStart] = useState(0);
   const monitorElement = useRef<HTMLDivElement>(null);
@@ -158,6 +171,8 @@ export default function Studio() {
         if (!disposed) {
           setRuntime(nextRuntime);
           setRuntimePrerequisites(prerequisites);
+          setRuntimeInstallRoot((value) => value || prerequisites.installRoot);
+          setModelInstallRoot((value) => value || prerequisites.modelRoot || prerequisites.defaultModelRoot);
           setRuntimeSetup(setup);
           lastStatus = setup?.status ?? "";
         }
@@ -398,6 +413,8 @@ export default function Studio() {
       ]);
       setRuntime(nextRuntime);
       setRuntimePrerequisites(prerequisites);
+      setRuntimeInstallRoot((value) => value || prerequisites.installRoot);
+      setModelInstallRoot((value) => value || prerequisites.modelRoot || prerequisites.defaultModelRoot);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -411,6 +428,8 @@ export default function Studio() {
         await invoke<RuntimeSetup>("studio_start_runtime_setup", {
           profile: runtimeProfile,
           withText: runtimeTextIndex,
+          runtimeRoot: runtimeInstallRoot || null,
+          modelRoot: modelInstallRoot || null,
         }),
       );
     } catch (e) {
@@ -418,6 +437,12 @@ export default function Studio() {
     } finally {
       setRuntimeChecking(false);
     }
+  }
+  async function pickSetupFolder(kind: "runtime" | "models") {
+    try {
+      const folder = await invoke<string | null>("studio_pick_runtime_setup_folder", { kind });
+      if (folder) (kind === "runtime" ? setRuntimeInstallRoot : setModelInstallRoot)(folder);
+    } catch (e) { setError(errorText(e)); }
   }
   async function cancelRuntimeInstall() {
     try {
@@ -1551,14 +1576,27 @@ export default function Studio() {
               <button className="sc-wide" disabled={runtimeChecking} onClick={() => pickRuntime(false)}>
                 {runtimeChecking ? "Checking computer…" : "Check computer again"}
               </button>
-              <p className="sc-muted">Install location</p>
+              <h3>Choose storage locations</h3>
               {!runtimePrerequisites?.pythonReady && (
                 <div className="sc-row">
                   <button onClick={() => openUrl("https://www.python.org/downloads/windows/").catch((e) => setError(errorText(e)))}>Get Python for Windows</button>
                   <span className="sc-muted">Choose Python 3.12 · Windows installer (64-bit).</span>
                 </div>
               )}
-              <p className="sc-path">{runtimePrerequisites?.installRoot ?? "Checking…"}</p>
+              <div className="sc-runtime-locations">
+                <div>
+                  <strong>Local runtime</strong>
+                  <small>Stores the private Python environment, AI libraries, FFmpeg and the install log.</small>
+                  <p className="sc-path">{runtimeInstallRoot || "Checking…"}</p>
+                  <span className="sc-row"><button disabled={runtimeSetup?.status === "running"} onClick={() => pickSetupFolder("runtime")}>Choose folder</button><button disabled={runtimeSetup?.status === "running"} onClick={() => setRuntimeInstallRoot(runtimePrerequisites?.installRoot ?? "")}>Use default</button></span>
+                </div>
+                <div>
+                  <strong>AI models</strong>
+                  <small>Stores downloaded model weights. Choose a drive with ample free space if needed.</small>
+                  <p className="sc-path">{modelInstallRoot || "Checking…"}</p>
+                  <span className="sc-row"><button disabled={runtimeSetup?.status === "running"} onClick={() => pickSetupFolder("models")}>Choose folder</button><button disabled={runtimeSetup?.status === "running"} onClick={() => setModelInstallRoot(runtimePrerequisites?.defaultModelRoot ?? "")}>Use default</button></span>
+                </div>
+              </div>
 
               {runtimeSetup && (
                 <div className={`sc-setup-result ${runtimeSetup.status}`} role="status">
@@ -1567,7 +1605,12 @@ export default function Studio() {
                     <span>{runtimeSetup.profile === "fast" ? "Fast" : "Quality"}</span>
                   </div>
                   <p>{runtimeSetup.message}</p>
-                  {runtimeSetup.status === "running" && <progress />}
+                  {runtimeSetup.status === "running" && <>
+                    <div className="sc-progress-title"><span>{stageLabel(runtimeSetup.stage)}</span><b>{runtimeSetup.totalBytes > 0 ? `${Math.min(100, Math.floor(runtimeSetup.downloadedBytes / runtimeSetup.totalBytes * 100))}%` : "Working…"}</b></div>
+                    <progress max={runtimeSetup.totalBytes || undefined} value={runtimeSetup.totalBytes ? runtimeSetup.downloadedBytes : undefined} />
+                    {runtimeSetup.totalBytes > 0 ? <div className="sc-progress-metrics"><span><small>Downloaded</small>{bytes(runtimeSetup.downloadedBytes)} / {bytes(runtimeSetup.totalBytes)}</span><span><small>Remaining</small>{bytes(runtimeSetup.remainingBytes)}</span><span><small>Speed</small>{runtimeSetup.bytesPerSecond > 0 ? `${bytes(runtimeSetup.bytesPerSecond)}/s` : "Measuring…"}</span></div> : <small className="sc-muted">Preparing files. Package installers do not provide a reliable byte total.</small>}
+                    {runtimeSetup.currentItem && <p className="sc-progress-item">Current model: {runtimeSetup.currentItem}</p>}
+                  </>}
                   <div className="sc-row">
                     {runtimeSetup.logPath && <button onClick={() => openFile(runtimeSetup.logPath)}>Open install log</button>}
                     {runtimeSetup.status === "running" && <button onClick={cancelRuntimeInstall}>Cancel installation</button>}

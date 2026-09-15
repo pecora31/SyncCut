@@ -32,6 +32,26 @@ pub struct RuntimeSetup {
     pub profile: String,
     pub pid: u32,
     pub log_path: String,
+    #[serde(default)]
+    pub stage: String,
+    #[serde(default)]
+    pub current_item: String,
+    #[serde(default)]
+    pub model_key: String,
+    #[serde(default)]
+    pub downloaded_bytes: u64,
+    #[serde(default)]
+    pub total_bytes: u64,
+    #[serde(default)]
+    pub bytes_per_second: f64,
+    #[serde(default)]
+    pub remaining_bytes: u64,
+    #[serde(default)]
+    pub install_root: String,
+    #[serde(default)]
+    pub model_root: String,
+    #[serde(skip)]
+    pub progress_sample: Option<(u64, Instant)>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -319,6 +339,10 @@ pub fn studio_runtime(app: tauri::AppHandle, pick: Option<bool>) -> Result<Value
             .map_err(|e| e.to_string())?
             .join("runtime"),
     );
+    let model_root = cfg["modelRoot"]
+        .as_str()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("models"));
     let mut python = root.join("python").join(if cfg!(windows) {
         "python.exe"
     } else {
@@ -336,7 +360,7 @@ pub fn studio_runtime(app: tauri::AppHandle, pick: Option<bool>) -> Result<Value
         .ok_or("Invalid model manifest.")?
         .iter()
         .map(|(key, m)| {
-            let marker = root.join("models").join(key).join("synccut-model.json");
+            let marker = model_root.join(key).join("synccut-model.json");
             let installed = fs::read(marker)
                 .ok()
                 .and_then(|d| serde_json::from_slice::<Value>(&d).ok());
@@ -351,10 +375,9 @@ pub fn studio_runtime(app: tauri::AppHandle, pick: Option<bool>) -> Result<Value
                                     && !relative
                                         .components()
                                         .any(|c| matches!(c, std::path::Component::ParentDir))
-                                    && fs::metadata(root.join("models").join(key).join(relative))
-                                        .is_ok_and(|m| {
-                                            m.is_file() && Some(m.len()) == size.as_u64()
-                                        })
+                                    && fs::metadata(model_root.join(key).join(relative)).is_ok_and(
+                                        |m| m.is_file() && Some(m.len()) == size.as_u64(),
+                                    )
                             })
                     })
             });
@@ -365,7 +388,7 @@ pub fn studio_runtime(app: tauri::AppHandle, pick: Option<bool>) -> Result<Value
     Ok(
         json!({"root":normalize(&root),"pythonPath":normalize(&python),"pythonReady":python.is_file(),
         "binDir":normalize(&root.join("bin")),"binariesReady":root.join(format!("bin/ffmpeg{}",suffix)).is_file() && root.join(format!("bin/ffprobe{}",suffix)).is_file(),
-        "modelDir":normalize(&root.join("models")),"engineDir":normalize(&engine),"models":models}),
+        "modelDir":normalize(&model_root),"engineDir":normalize(&engine),"models":models}),
     )
 }
 
@@ -431,6 +454,34 @@ fn detected_media_bin(app: &tauri::AppHandle) -> Option<PathBuf> {
         .find(|folder| folder.join("ffmpeg.exe").is_file() && folder.join("ffprobe.exe").is_file())
 }
 
+fn setup_folder(path: Option<String>, fallback: PathBuf, label: &str) -> Result<PathBuf, String> {
+    let folder = path
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or(fallback);
+    fs::create_dir_all(&folder).map_err(|e| format!("Cannot create {label} folder: {e}"))?;
+    let folder = folder.canonicalize().map_err(|e| e.to_string())?;
+    if folder == PathBuf::from(folder.ancestors().last().unwrap_or(&folder)) {
+        return Err(format!(
+            "Choose a dedicated {label} folder, not a drive root."
+        ));
+    }
+    Ok(folder)
+}
+
+#[tauri::command]
+pub fn studio_pick_runtime_setup_folder(kind: String) -> Result<Option<String>, String> {
+    let title = match kind.as_str() {
+        "runtime" => "Choose folder for SyncCut local runtime",
+        "models" => "Choose folder for SyncCut AI models",
+        _ => return Err("Unknown folder selection.".into()),
+    };
+    Ok(rfd::FileDialog::new()
+        .set_title(title)
+        .pick_folder()
+        .map(|path| normalize(&path)))
+}
+
 #[tauri::command]
 pub fn studio_runtime_prerequisites(app: tauri::AppHandle) -> Result<Value, String> {
     let python = detected_python();
@@ -440,19 +491,26 @@ pub fn studio_runtime_prerequisites(app: tauri::AppHandle) -> Result<Value, Stri
         command.args(["--query-gpu=name,memory.total", "--format=csv,noheader"]);
         command
     });
-    let root = app
+    let cfg = config(&app);
+    let default_root = app
         .path()
         .app_local_data_dir()
         .map_err(|e| e.to_string())?
         .join("runtime");
+    let root = cfg["runtimeRoot"]
+        .as_str()
+        .map(PathBuf::from)
+        .unwrap_or(default_root);
+    let default_model_root = root.join("models");
+    let model_root = cfg["modelRoot"]
+        .as_str()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| default_model_root.clone());
     Ok(json!({
-        "pythonReady": python.is_some(),
-        "pythonPath": python.as_ref().map(|p| normalize(p)).unwrap_or_default(),
-        "mediaReady": media.is_some(),
-        "mediaPath": media.as_ref().map(|p| normalize(p)).unwrap_or_default(),
-        "gpuReady": gpu.is_some(),
-        "gpuDescription": gpu.unwrap_or_default(),
-        "installRoot": normalize(&root)
+        "pythonReady": python.is_some(), "pythonPath": python.as_ref().map(|p| normalize(p)).unwrap_or_default(),
+        "mediaReady": media.is_some(), "mediaPath": media.as_ref().map(|p| normalize(p)).unwrap_or_default(),
+        "gpuReady": gpu.is_some(), "gpuDescription": gpu.unwrap_or_default(),
+        "installRoot": normalize(&root), "defaultModelRoot": normalize(&default_model_root), "modelRoot": normalize(&model_root)
     }))
 }
 
@@ -460,11 +518,40 @@ pub fn studio_runtime_prerequisites(app: tauri::AppHandle) -> Result<Value, Stri
 pub fn studio_runtime_setup_status(
     state: tauri::State<StudioState>,
 ) -> Result<Option<RuntimeSetup>, String> {
-    state
-        .runtime_setup
-        .lock()
-        .map_err(|e| e.to_string())
-        .map(|value| value.clone())
+    let mut guard = state.runtime_setup.lock().map_err(|e| e.to_string())?;
+    let Some(setup) = guard.as_mut() else {
+        return Ok(None);
+    };
+    if setup.status == "running" {
+        let progress = Path::new(&setup.install_root).join(".synccut-runtime-progress.json");
+        if let Ok(data) = fs::read(progress) {
+            if let Ok(value) = serde_json::from_slice::<Value>(&data) {
+                setup.stage = value["stage"].as_str().unwrap_or(&setup.stage).to_string();
+                setup.message = value["message"]
+                    .as_str()
+                    .unwrap_or(&setup.message)
+                    .to_string();
+                setup.current_item = value["currentItem"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                setup.model_key = value["modelKey"].as_str().unwrap_or_default().to_string();
+                setup.downloaded_bytes = value["downloadedBytes"].as_u64().unwrap_or(0);
+                setup.total_bytes = value["totalBytes"].as_u64().unwrap_or(0);
+                setup.remaining_bytes = setup.total_bytes.saturating_sub(setup.downloaded_bytes);
+                let current = setup.downloaded_bytes;
+                let now = Instant::now();
+                if let Some((last, at)) = setup.progress_sample {
+                    let elapsed = now.duration_since(at).as_secs_f64();
+                    if current >= last && elapsed > 0.05 {
+                        setup.bytes_per_second = (current - last) as f64 / elapsed;
+                    }
+                }
+                setup.progress_sample = Some((current, now));
+            }
+        }
+    }
+    Ok(Some(setup.clone()))
 }
 
 #[tauri::command]
@@ -473,6 +560,8 @@ pub fn studio_start_runtime_setup(
     state: tauri::State<StudioState>,
     profile: String,
     with_text: Option<bool>,
+    runtime_root: Option<String>,
+    model_root: Option<String>,
 ) -> Result<RuntimeSetup, String> {
     if !["fast", "quality"].contains(&profile.as_str()) {
         return Err("Choose either the Fast or Quality model pack.".into());
@@ -497,12 +586,13 @@ pub fn studio_start_runtime_setup(
     let media = detected_media_bin(&app)
         .ok_or("FFmpeg files are missing from this SyncCut installation. Reinstall SyncCut.")?;
     let engine = engine_directory(&app)?;
-    let root = app
+    let fallback = app
         .path()
         .app_local_data_dir()
         .map_err(|e| e.to_string())?
         .join("runtime");
-    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    let root = setup_folder(runtime_root, fallback, "runtime")?;
+    let models = setup_folder(model_root, root.join("models"), "model")?;
     let log_path = root.join("runtime-install.log");
     let stdout = fs::File::create(&log_path).map_err(|e| e.to_string())?;
     let stderr = stdout.try_clone().map_err(|e| e.to_string())?;
@@ -515,10 +605,17 @@ pub fn studio_start_runtime_setup(
         "-File",
     ]);
     command.arg(engine.join("setup-runtime.ps1"));
-    command.arg("-RuntimeRoot").arg(&root);
-    command.arg("-PythonExe").arg(&python);
-    command.arg("-MediaBin").arg(&media);
-    command.arg("-Profile").arg(&profile);
+    command
+        .arg("-RuntimeRoot")
+        .arg(&root)
+        .arg("-ModelRoot")
+        .arg(&models)
+        .arg("-PythonExe")
+        .arg(&python)
+        .arg("-MediaBin")
+        .arg(&media)
+        .arg("-Profile")
+        .arg(&profile);
     if with_text.unwrap_or(false) {
         command.arg("-WithTextIndex");
     }
@@ -531,23 +628,36 @@ pub fn studio_start_runtime_setup(
         .map_err(|e| format!("Cannot start runtime installer: {e}"))?;
     let setup = RuntimeSetup {
         status: "running".into(),
-        message: "Installing Python packages and downloading the selected models…".into(),
+        message: "Preparing the local AI runtime...".into(),
         profile: profile.clone(),
         pid: child.id(),
         log_path: normalize(&log_path),
+        stage: "starting".into(),
+        current_item: String::new(),
+        model_key: String::new(),
+        downloaded_bytes: 0,
+        total_bytes: 0,
+        bytes_per_second: 0.0,
+        remaining_bytes: 0,
+        install_root: normalize(&root),
+        model_root: normalize(&models),
+        progress_sample: None,
     };
     *setup_guard = Some(setup.clone());
     drop(setup_guard);
     drop(job_guard);
     let owned_pid = setup.pid;
     let setup_app = app.clone();
+    let setup_root = root.clone();
+    let setup_models = models.clone();
     std::thread::spawn(move || {
         let result = child.wait();
         let studio = setup_app.state::<StudioState>();
         if let Ok(mut guard) = studio.runtime_setup.lock() {
-            if !guard.as_ref().is_some_and(|current| {
-                current.status == "running" && current.pid == owned_pid
-            }) {
+            if !guard
+                .as_ref()
+                .is_some_and(|current| current.status == "running" && current.pid == owned_pid)
+            {
                 return;
             }
             let mut success = result.as_ref().is_ok_and(|status| status.success());
@@ -556,23 +666,25 @@ pub fn studio_start_runtime_setup(
                     .to_string();
             if success {
                 let mut cfg = config(&setup_app);
-                cfg["runtimeRoot"] = json!(normalize(&root));
+                cfg["runtimeRoot"] = json!(normalize(&setup_root));
+                cfg["modelRoot"] = json!(normalize(&setup_models));
                 cfg["runtimeProfile"] = json!(profile);
                 match save_config(&setup_app, cfg) {
                     Ok(()) => message = "Runtime is ready. You can start processing.".into(),
                     Err(error) => {
                         success = false;
-                        message = format!("Runtime installed, but its location could not be saved: {error}. Choose it in Advanced.");
+                        message = format!(
+                            "Runtime installed, but its location could not be saved: {error}."
+                        );
                     }
                 }
             }
-            let finished = RuntimeSetup {
-                status: if success { "completed" } else { "failed" }.into(),
-                message,
-                profile,
-                pid: 0,
-                log_path: normalize(&log_path),
-            };
+            let mut finished = guard.as_ref().cloned().unwrap();
+            finished.status = if success { "completed" } else { "failed" }.into();
+            finished.message = message;
+            finished.pid = 0;
+            finished.stage = if success { "ready" } else { "failed" }.into();
+            finished.progress_sample = None;
             *guard = Some(finished.clone());
             let _ = setup_app.emit("studio-runtime-setup", finished);
         };

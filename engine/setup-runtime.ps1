@@ -8,6 +8,7 @@ param(
     [Parameter(Mandatory=$true)][string]$RuntimeRoot,
     [Parameter(Mandatory=$true)][string]$PythonExe,
     [Parameter(Mandatory=$true)][string]$MediaBin,
+    [string]$ModelRoot,
     [ValidateSet('fast','quality','both')][string]$Profile = 'fast',
     [switch]$WithTextIndex,
     [switch]$SkipModels
@@ -15,15 +16,24 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $taskRoot = [IO.Path]::GetFullPath($RuntimeRoot)
+$taskModelRoot = if ($ModelRoot) { [IO.Path]::GetFullPath($ModelRoot) } else { Join-Path $taskRoot 'models' }
 $basePython = (Resolve-Path -LiteralPath $PythonExe).Path
 $mediaFolder = (Resolve-Path -LiteralPath $MediaBin).Path
 if ($taskRoot -eq [IO.Path]::GetPathRoot($taskRoot)) { throw 'Choose a dedicated runtime directory, not a drive root.' }
+if ($taskModelRoot -eq [IO.Path]::GetPathRoot($taskModelRoot)) { throw 'Choose a dedicated model directory, not a drive root.' }
 foreach ($binaryName in @('ffmpeg.exe','ffprobe.exe')) {
     if (-not (Test-Path -LiteralPath (Join-Path $mediaFolder $binaryName) -PathType Leaf)) { throw "Missing $binaryName in MediaBin." }
 }
 $pythonIdentity = & $basePython -c 'import sys,struct;print(sys.version_info.major,sys.version_info.minor,struct.calcsize(bytes([80]).decode()))'
 if ($LASTEXITCODE -ne 0 -or $pythonIdentity -notmatch '^3 (11|12) 8$') { throw 'CPython 3.11/3.12 x64 is required.' }
 New-Item -ItemType Directory -Path $taskRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $taskModelRoot -Force | Out-Null
+$progressPath = Join-Path $taskRoot '.synccut-runtime-progress.json'
+function Set-SetupProgress([string]$Stage, [string]$Message) {
+    [ordered]@{stage=$Stage;message=$Message;currentItem='';modelKey='';downloadedBytes=0;totalBytes=0} |
+        ConvertTo-Json -Compress | Set-Content -LiteralPath $progressPath -Encoding utf8
+}
+Set-SetupProgress 'python' 'Creating the local Python environment…'
 $runtimePython = Join-Path $taskRoot 'python/Scripts/python.exe'
 if (-not (Test-Path -LiteralPath $runtimePython)) {
     & $basePython -m venv (Join-Path $taskRoot 'python')
@@ -33,12 +43,14 @@ function Install-RuntimePackages([string[]]$Arguments) {
     & $runtimePython -m pip @Arguments
     if ($LASTEXITCODE -ne 0) { throw 'Package installation failed. Fix the reported error and rerun setup.' }
 }
+Set-SetupProgress 'packages' 'Installing local AI and GPU packages…'
 Install-RuntimePackages @('install','pip==25.2')
 Install-RuntimePackages @('install','torch==2.7.1','torchvision==0.22.1','torchaudio==2.7.1','--index-url','https://download.pytorch.org/whl/cu126')
 Install-RuntimePackages @('install','-r',(Join-Path $PSScriptRoot 'requirements.txt'))
 & $runtimePython -m pip check
 if ($LASTEXITCODE -ne 0) { throw 'Runtime has conflicting dependencies.' }
 $binTarget = Join-Path $taskRoot 'bin'
+Set-SetupProgress 'media' 'Preparing local media tools…'
 New-Item -ItemType Directory -Path $binTarget -Force | Out-Null
 foreach ($binaryName in @('ffmpeg.exe','ffprobe.exe')) {
     $sourceBinary = Join-Path $mediaFolder $binaryName
@@ -52,12 +64,15 @@ Get-ChildItem -LiteralPath $mediaFolder -Filter '*.dll' -File | ForEach-Object {
 }
 & $runtimePython -m pip freeze | Set-Content -LiteralPath (Join-Path $taskRoot 'installed-requirements.txt') -Encoding utf8
 if (-not $SkipModels) {
-    $modelArgs = @((Join-Path $PSScriptRoot 'manage_models.py'),'install','--root',$taskRoot,'--profile',$Profile)
+    Set-SetupProgress 'models' 'Preparing model downloads…'
+    $modelArgs = @((Join-Path $PSScriptRoot 'manage_models.py'),'install','--root',$taskRoot,'--model-root',$taskModelRoot,'--profile',$Profile)
     if ($WithTextIndex) { $modelArgs += '--with-text' }
     & $runtimePython @modelArgs
     if ($LASTEXITCODE -ne 0) { throw 'Model installation incomplete. Rerun setup to resume downloads.' }
 }
+Set-SetupProgress 'verify' 'Checking the local GPU and media tools…'
 & $runtimePython (Join-Path $PSScriptRoot 'preflight.py') --root $taskRoot
 if ($LASTEXITCODE -ne 0) { throw 'Runtime installed, but GPU/media validation failed. Check the NVIDIA driver and rerun setup.' }
 Write-Host "Runtime prepared and validated at $taskRoot"
+Set-SetupProgress 'ready' 'Runtime and selected models are ready.'
 Write-Host 'SyncCut can now use this runtime. Complete an actual project and Premiere round-trip before delivery.'

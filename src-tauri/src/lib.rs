@@ -1196,6 +1196,7 @@ pub fn run() {
             studio::studio_import,
             studio::studio_runtime,
             studio::studio_runtime_prerequisites,
+            studio::studio_pick_runtime_setup_folder,
             studio::studio_runtime_setup_status,
             studio::studio_start_runtime_setup,
             studio::studio_cancel_runtime_setup,

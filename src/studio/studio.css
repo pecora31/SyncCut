@@ -835,6 +835,17 @@
   height: 4px;
   margin: 4px 0 10px;
 }
+.sc-runtime-locations { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sc-runtime-locations > div { border: 1px solid #383838; border-radius: 5px; padding: 12px; background: #191919; }
+.sc-runtime-locations strong, .sc-runtime-locations small { display: block; }
+.sc-runtime-locations small { color: #999; font-size: 11px; line-height: 1.4; margin-top: 4px; }
+.sc-runtime-locations .sc-path { margin: 10px 0; min-height: 36px; }
+.sc-progress-title { display: flex; justify-content: space-between; margin: 10px 0 3px; font-size: 11px; color: #ccc; }
+.sc-progress-title b { color: #e6e6e6; }
+.sc-progress-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font: 11px Consolas, monospace; color: #ddd; }
+.sc-progress-metrics span { min-width: 0; overflow-wrap: anywhere; }
+.sc-progress-metrics small { display: block; margin-bottom: 3px; color: #888; font: 10px inherit; }
+.sc-progress-item { margin: 10px 0 0 !important; color: #aaa; overflow-wrap: anywhere; font-size: 11px; }
 .sc-install-runtime {
   min-height: 42px;
 }
@@ -852,6 +863,8 @@
   .sc-profile-grid {
     grid-template-columns: 1fr;
   }
+  .sc-runtime-locations { grid-template-columns: 1fr; }
+  .sc-progress-metrics { grid-template-columns: 1fr; }
   .sc-runtime-steps span {
     padding: 8px;
   }

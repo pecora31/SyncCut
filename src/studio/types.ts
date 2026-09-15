@@ -136,6 +136,8 @@ export interface RuntimePrerequisites {
   gpuReady: boolean;
   gpuDescription: string;
   installRoot: string;
+  defaultModelRoot: string;
+  modelRoot: string;
 }
 export interface RuntimeSetup {
   status: "running" | "completed" | "failed" | "cancelled";
@@ -143,6 +145,15 @@ export interface RuntimeSetup {
   profile: "fast" | "quality";
   pid: number;
   logPath: string;
+  stage: string;
+  currentItem: string;
+  modelKey: string;
+  downloadedBytes: number;
+  totalBytes: number;
+  bytesPerSecond: number;
+  remainingBytes: number;
+  installRoot: string;
+  modelRoot: string;
 }
 export const fpsOf = (p: Project) => p.settings.fpsNum / p.settings.fpsDen;
 export function clock(s: number) {
