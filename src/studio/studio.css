@@ -824,6 +824,19 @@
   margin: 14px 0;
   background: #191919;
 }
+.sc-guide-card, .sc-source-guide {
+  border: 1px solid #4a4a4a;
+  border-radius: 6px;
+  padding: 16px;
+  background: #1b1b1b;
+  color: #ccc;
+  line-height: 1.5;
+}
+.sc-guide-card strong, .sc-source-guide strong { display: block; color: #f0f0f0; font-size: 13px; margin-bottom: 5px; }
+.sc-guide-card p, .sc-source-guide p { margin: 0 0 12px; }
+.sc-source-guide { min-height: 340px; display: grid; align-content: center; text-align: center; }
+.sc-visual-plan .sc-passage { min-height: 92px; }
+.sc-visual-plan .sc-passage strong { display: block; text-align: left; margin-top: 7px; }
 .sc-setup-result.completed {
   border-color: #4e6b4e;
 }

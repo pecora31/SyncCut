@@ -49,6 +49,9 @@ function isYouTubeUrl(val: string): boolean {
   const clean = cleanYouTubeUrl(val);
   return /(?:https?:\/\/)?(?:[a-zA-Z0-9-]+\.)?(?:youtube\.com|youtu\.be)\/.+/i.test(clean);
 }
+function isPlaylistUrl(val: string): boolean {
+  try { return new URL(cleanYouTubeUrl(val)).searchParams.has('list'); } catch { return /[?&]list=/.test(val); }
+}
 
 export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
   isOpen,
@@ -67,6 +70,7 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
   const [videoContainer, setVideoContainer] = useState('mp4');
   const [selectedAudioAbr, setSelectedAudioAbr] = useState<number | null>(null);
   const [audioContainer, setAudioContainer] = useState('wav');
+  const [downloadPlaylist, setDownloadPlaylist] = useState(false);
 
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<{
@@ -200,6 +204,7 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
           audioContainer,
           timeRangeStart: null,
           timeRangeEnd: null,
+          downloadPlaylist,
         },
       });
 
@@ -271,15 +276,14 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
               onKeyDown={(e) => e.key === 'Enter' && fetchMetadataForUrl(url)}
               className="flex-1 px-3 py-2 bg-[#141414] border border-[#383838] focus:border-[#666666] rounded text-[#e6e6e6] text-xs outline-none font-mono"
             />
-            <button
-              type="button"
-              disabled={isFetching || !url.trim()}
-              onClick={() => fetchMetadataForUrl(url)}
-              className="px-4 py-2 bg-[#2a2a2a] hover:bg-[#383838] disabled:bg-[#1c1c1c] disabled:text-[#555555] text-white border border-[#444444] font-medium text-xs rounded transition-colors cursor-pointer shrink-0 font-mono"
-            >
-              {isFetching ? 'Getting video...' : metadata ? 'Ready' : 'Get'}
-            </button>
           </div>
+
+          {isPlaylistUrl(url) && (
+            <div className="text-[#e8c783] text-[11px] bg-[#302719] p-2 rounded border border-[#6b5730] leading-relaxed">
+              <strong>Playlist detected.</strong> Downloading every item may take a long time and use substantial disk space.
+              <label className="mt-2 flex items-center gap-2 text-[#f1d99e]"><input type="checkbox" checked={downloadPlaylist} onChange={(e) => setDownloadPlaylist(e.target.checked)} /> Download the entire playlist</label>
+            </div>
+          )}
 
           {fetchError && (
             <div className="text-[#cca0a0] text-[11px] bg-[#2d1a1a] p-2 rounded border border-[#552a2a] font-mono leading-relaxed">
@@ -309,7 +313,7 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
               onClick={() => setMode('full_video')}
               className={`py-1.5 rounded border text-center transition-all cursor-pointer ${
                 mode === 'full_video'
-                  ? 'bg-[#333333] border-[#666666] text-white font-medium'
+                  ? 'bg-[#e8e8e8] border-[#f5f5f5] text-[#111111] font-semibold shadow-[0_0_0_1px_#e8e8e8]'
                   : 'bg-[#181818] border-[#303030] text-[#888888] hover:text-white'
               }`}
             >
@@ -320,7 +324,7 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
               onClick={() => setMode('audio_only')}
               className={`py-1.5 rounded border text-center transition-all cursor-pointer ${
                 mode === 'audio_only'
-                  ? 'bg-[#333333] border-[#666666] text-white font-medium'
+                  ? 'bg-[#e8e8e8] border-[#f5f5f5] text-[#111111] font-semibold shadow-[0_0_0_1px_#e8e8e8]'
                   : 'bg-[#181818] border-[#303030] text-[#888888] hover:text-white'
               }`}
             >
@@ -331,7 +335,7 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
               onClick={() => setMode('video_only')}
               className={`py-1.5 rounded border text-center transition-all cursor-pointer ${
                 mode === 'video_only'
-                  ? 'bg-[#333333] border-[#666666] text-white font-medium'
+                  ? 'bg-[#e8e8e8] border-[#f5f5f5] text-[#111111] font-semibold shadow-[0_0_0_1px_#e8e8e8]'
                   : 'bg-[#181818] border-[#303030] text-[#888888] hover:text-white'
               }`}
             >
@@ -342,12 +346,12 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
 
         {/* Format Selection */}
         {mode !== 'audio_only' && (
-          <div className="flex gap-2">
+          <div className="grid grid-cols-[minmax(180px,1fr)_92px] gap-2">
             <select
               disabled={!metadata}
               value={downloadVideoHeight || ''}
               onChange={(e) => setDownloadVideoHeight(Number(e.target.value))}
-              className="flex-1 px-3 py-1.5 bg-[#141414] border border-[#383838] rounded text-[#e6e6e6] text-xs font-mono outline-none disabled:opacity-50"
+              className="w-full px-3 py-1.5 bg-[#141414] border border-[#383838] rounded text-[#e6e6e6] text-xs font-mono outline-none disabled:opacity-50"
             >
               {metadata?.availableVideoQualities && metadata.availableVideoQualities.length > 0 ? (
                 metadata.availableVideoQualities.map((vq) => (
@@ -361,7 +365,7 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
             <select
               value={videoContainer}
               onChange={(e) => setVideoContainer(e.target.value)}
-              className="w-24 px-2 py-1.5 bg-[#141414] border border-[#383838] rounded text-[#e6e6e6] text-xs font-mono outline-none"
+              className="w-full px-2 py-1.5 bg-[#141414] border border-[#383838] rounded text-[#e6e6e6] text-xs font-mono outline-none"
             >
               <option value="mp4">.mp4</option>
               <option value="mkv">.mkv</option>
@@ -371,12 +375,12 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
         )}
 
         {mode === 'audio_only' && (
-          <div className="flex gap-2">
+          <div className="grid grid-cols-[minmax(180px,1fr)_92px] gap-2">
             <select
               disabled={!metadata}
               value={selectedAudioAbr || ''}
               onChange={(e) => setSelectedAudioAbr(Number(e.target.value))}
-              className="flex-1 px-3 py-1.5 bg-[#141414] border border-[#383838] rounded text-[#e6e6e6] text-xs font-mono outline-none disabled:opacity-50"
+              className="w-full px-3 py-1.5 bg-[#141414] border border-[#383838] rounded text-[#e6e6e6] text-xs font-mono outline-none disabled:opacity-50"
             >
               {metadata?.availableAudioQualities && metadata.availableAudioQualities.length > 0 ? (
                 metadata.availableAudioQualities.map((aq) => (
@@ -390,7 +394,7 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
             <select
               value={audioContainer}
               onChange={(e) => setAudioContainer(e.target.value)}
-              className="w-24 px-2 py-1.5 bg-[#141414] border border-[#383838] rounded text-[#e6e6e6] text-xs font-mono outline-none"
+              className="w-full px-2 py-1.5 bg-[#141414] border border-[#383838] rounded text-[#e6e6e6] text-xs font-mono outline-none"
             >
               <option value="wav">.wav</option>
               <option value="mp3">.mp3</option>

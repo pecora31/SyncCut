@@ -21,7 +21,7 @@ import {
 } from "./types";
 import "./studio.css";
 
-const steps = ["Sources", "Recording", "Scenes", "Timeline"] as const;
+const steps = ["Import & Preview", "Check narration", "Review visual suggestions", "Preview & Export"] as const;
 function clearScenes(p: Project) {
   p.shots = [];
   p.matches = [];
@@ -122,7 +122,7 @@ export default function Studio() {
             adopt(p);
             setSource(null);
             if (j.stage === "speech") setStep(1);
-            if (j.stage === "match") setStep(3);
+            if (j.stage === "match") setStep(2);
           })
           .catch((e) => {
             failedRef.current = true;
@@ -514,6 +514,20 @@ export default function Studio() {
       p.clips = [];
     });
   }
+  function acceptAllNarration() {
+    change((p) => {
+      p.beats = p.beats.map((b) => b.status === "review" ? { ...b, status: "accepted", issue: "" } : b);
+      p.matches = [];
+      p.clips = [];
+    });
+    void start("match");
+  }
+  function acceptAllVisuals() {
+    change((p) => {
+      p.clips = p.clips.map((clip) => clip.assetId ? { ...clip, state: "accepted", locked: true } : clip);
+    });
+    setStep(3);
+  }
   function choose(shotId: string) {
     const p = projectRef.current!;
     const clip = p.clips.find((c) => c.id === clipId);
@@ -681,9 +695,9 @@ export default function Studio() {
                     {i === 0
                       ? `${project.assets.length} sources`
                       : i === 1
-                        ? `${reviewCount} to review`
+                        ? project.beats.length ? `${reviewCount} flagged` : "Awaiting analysis"
                         : i === 2
-                          ? `${project.shots.length} scenes`
+                          ? `${project.clips.length || project.shots.length} suggestions`
                           : `${project.clips.length} clips · ${gaps} gaps`}
                   </small>
                 </span>
@@ -696,12 +710,12 @@ export default function Studio() {
                 <h2>{steps[step]}</h2>
                 <span className="sc-muted">
                   {step === 0
-                    ? "Select, then double-click to preview"
+                    ? "Add your narration, script and footage, then analyze once"
                     : step === 1
-                      ? "Confirm what was actually recorded"
+                      ? "Listen to the narration and approve the AI alignment"
                       : step === 2
-                        ? "Inspect evidence before choosing"
-                        : "Refine the suggested sequence"}
+                        ? "Keep the visual plan or replace only the scenes you dislike"
+                        : "Preview the assembled video and export it to Premiere"}
                 </span>
               </div>
               <div className="sc-panel-body">
@@ -922,19 +936,24 @@ export default function Studio() {
                       disabled={busy || !project.voiceId || !project.scriptId}
                       onClick={() => start("speech")}
                     >
-                      Check recording
+                      Analyze voice & footage
                     </button>
                   </>
                 )}
                 {step === 1 && (
                   <>
                     {!project.beats.length ? (
-                      <p className="sc-empty">
-                        Check your recording from Sources to see timed passages
-                        here.
-                      </p>
+                      <div className="sc-empty sc-guide-card">
+                        <strong>Analyze your narration first</strong>
+                        <p>Return to Import & Preview, then select a voiceover and script and click Analyze voice & footage.</p>
+                        <button onClick={() => setStep(0)}>Go to Import & Preview</button>
+                      </div>
                     ) : (
                       <>
+                        <div className="sc-guide-card">
+                          <strong>{reviewCount ? `${reviewCount} lines need a quick look` : "Narration aligned"}</strong>
+                          <p>Press play in the preview to hear the voiceover. The list below contains the script passages aligned by AI; only flagged lines need attention.</p>
+                        </div>
                         <div className="sc-beat-list">
                           {project.beats.map((b) => (
                             <button
@@ -955,68 +974,42 @@ export default function Studio() {
                             </button>
                           ))}
                         </div>
-                        {beat && (
-                          <BeatEditor
-                            key={`${beat.id}:${beat.status}:${beat.text}:${beat.start}:${beat.end}`}
-                            beat={beat}
-                            disabled={busy}
-                            onSave={saveBeat}
-                          />
-                        )}
+                        {beat?.status === "review" && <details className="sc-runtime-advanced"><summary>Review selected flagged line</summary><BeatEditor key={`${beat.id}:${beat.status}:${beat.text}:${beat.start}:${beat.end}`} beat={beat} disabled={busy} onSave={saveBeat} /></details>}
                         <p className="sc-muted">
                           {reviewCount
                             ? `${reviewCount} passages need review before scene matching.`
                             : "Recording is ready for scene matching."}
                         </p>
-                        <button
-                          className="sc-primary sc-wide"
-                          disabled={
-                            busy ||
-                            reviewCount > 0 ||
-                            !media.length ||
-                            !project.beats.some((b) => b.status !== "excluded")
-                          }
-                          onClick={() => start("match")}
-                        >
-                          Find scenes
-                        </button>
+                        <div className="sc-row">
+                          <button className="sc-primary" disabled={busy || !media.length || !project.beats.some((b) => b.status !== "excluded")} onClick={acceptAllNarration}>Accept all matched narration</button>
+                          <button disabled={busy || reviewCount > 0 || !media.length || !project.beats.some((b) => b.status !== "excluded")} onClick={() => start("match")}>Find visual suggestions</button>
+                        </div>
                       </>
                     )}
                   </>
                 )}
                 {step === 2 && (
                   <>
-                    <label>
-                      Passage
-                      <select
-                        value={beat?.id ?? ""}
-                        onChange={(e) => setBeatId(e.target.value)}
-                      >
-                        {project.beats
-                          .filter((b) => b.status !== "excluded")
-                          .map((b, i) => (
-                            <option key={b.id} value={b.id}>
-                              {i + 1}. {b.text.slice(0, 70)}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                    {row?.visualBrief && (
-                      <p className="sc-brief">{row.visualBrief}</p>
+                    {!project.matches.length || !project.clips.length ? (
+                      <div className="sc-empty sc-guide-card"><strong>Visual suggestions are being prepared</strong><p>SyncCut will analyze selected footage and create one suggested scene for each narration passage.</p><button disabled={busy || !project.beats.length || !media.length} className="sc-primary" onClick={() => start("match")}>{busy ? "Analyzing footage..." : "Create visual suggestions"}</button></div>
+                    ) : (
+                      <>
+                        <div className="sc-guide-card"><strong>{project.clips.length} visual suggestions ready</strong><p>Click a card to preview that voiceover moment. Keep all suggestions, or select a card and replace it later from the final timeline.</p></div>
+                        <div className="sc-clip-list sc-visual-plan">
+                          {project.clips.map((item, index) => {
+                            const asset = project.assets.find((a) => a.id === item.assetId);
+                            const passage = project.beats.find((b) => b.id === item.beatId);
+                            const match = project.matches.find((m) => m.beatId === item.beatId);
+                            return <button key={item.id} className={`sc-passage ${item.id === clipId ? "selected" : ""}`} onClick={() => { setClipId(item.id); if (asset) preview(asset, item.sourceIn); }}>
+                              <span className="sc-row sc-between"><span className="sc-mono">{clock(item.start / fpsOf(project))} - {clock(item.end / fpsOf(project))}</span><span className="sc-tag">{item.state === "gap" ? "Needs a visual" : `${Math.round((match?.candidates[0]?.similarity ?? 0) * 100)}% match`}</span></span>
+                              <strong>{index + 1}. {asset?.name ?? "No visual selected"}</strong>
+                              <p>{passage?.text ?? item.reason}</p>
+                            </button>;
+                          })}
+                        </div>
+                        <div className="sc-row"><button className="sc-primary" disabled={busy} onClick={acceptAllVisuals}>Accept all suggestions</button><button disabled={busy} onClick={() => setStep(3)}>Review final timeline</button></div>
+                      </>
                     )}
-                    <Candidates
-                      project={project}
-                      candidates={row?.candidates ?? []}
-                      onPreview={preview}
-                      disabled={busy}
-                    />
-                    <button
-                      disabled={busy || !project.matches.length}
-                      className="sc-wide"
-                      onClick={replan}
-                    >
-                      Rebuild unlocked timeline
-                    </button>
                   </>
                 )}
                 {step === 3 && (
@@ -1190,19 +1183,12 @@ export default function Studio() {
             </section>
             <section className="sc-center">
               <div ref={monitorElement}>
-                <Monitor
-                  project={project}
-                  source={source}
-                  sourceStart={sourceStart}
-                  onCloseSource={() => setSource(null)}
-                  time={time}
-                  onTime={setTime}
-                  seekRequest={seekRequest}
-                />
+                <Monitor project={project} source={source} sourceStart={sourceStart} onCloseSource={() => setSource(null)} time={time} onTime={setTime} seekRequest={seekRequest} />
               </div>
-              <div className="sc-sequence">
+              {step === 0 && <div className="sc-empty sc-source-guide"><strong>Source preview</strong><p>Select a footage item and double-click it to preview. The edit timeline appears after SyncCut has matched narration to visuals.</p></div>}
+              {step === 3 && <div className="sc-sequence">
                 <div className="sc-panel-head">
-                  <h2>Sequence</h2>
+                  <h2>Final timeline</h2>
                   <span className="sc-mono">
                     {clock(project.duration)} ·{" "}
                     {project.settings.fpsNum / project.settings.fpsDen === 30
@@ -1263,7 +1249,7 @@ export default function Studio() {
                   value={Math.min(time, project.duration || 1)}
                   onChange={(e) => seek(Number(e.target.value))}
                 />
-              </div>
+              </div>}
               {step === 3 && clip && (
                 <div className="sc-alternatives">
                   <div className="sc-panel-head">

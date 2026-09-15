@@ -316,6 +316,8 @@ pub struct YouTubeDownloadOptions {
     pub audio_container: String,   // "wav", "mp3", "m4a", "aac", "flac"
     pub time_range_start: Option<String>,
     pub time_range_end: Option<String>,
+    #[serde(default)]
+    pub download_playlist: bool,
 }
 
 #[tauri::command]
@@ -610,6 +612,9 @@ async fn download_youtube_media(
             .into_owned();
         args.push("-o".to_string());
         args.push(out_template);
+        if !options.download_playlist {
+            args.push("--no-playlist".to_string());
+        }
 
         let height_filter = options
             .video_height
