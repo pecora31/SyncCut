@@ -454,6 +454,21 @@ fn detected_media_bin(app: &tauri::AppHandle) -> Option<PathBuf> {
         .find(|folder| folder.join("ffmpeg.exe").is_file() && folder.join("ffprobe.exe").is_file())
 }
 
+// YouTube downloads only require media tools, not the Python/model runtime.
+pub fn download_media_bin(app: &tauri::AppHandle) -> Result<String, String> {
+    let cfg = config(app);
+    let selected = cfg["runtimeRoot"]
+        .as_str()
+        .map(|root| Path::new(root).join("bin"))
+        .filter(|folder| {
+            folder.join("ffmpeg.exe").is_file() && folder.join("ffprobe.exe").is_file()
+        });
+    selected
+        .or_else(|| detected_media_bin(app))
+        .map(|folder| normalize(&folder))
+        .ok_or_else(|| "FFmpeg and FFprobe were not found. Reinstall SyncCut or select a runtime containing both media tools.".into())
+}
+
 fn setup_folder(path: Option<String>, fallback: PathBuf, label: &str) -> Result<PathBuf, String> {
     let folder = path
         .filter(|value| !value.trim().is_empty())

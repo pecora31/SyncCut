@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -6,6 +7,7 @@ import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { check } from "@tauri-apps/plugin-updater";
 import { safeConvertFileSrc } from "../utils/mediaUtils";
 import { Monitor } from "./Monitor";
+import { Dropdown } from "./Dropdown";
 import { YouTubeDownloadModal } from "../components/workspace/YouTubeDownloadModal";
 import { BeatEditor, Candidates } from "./Review";
 import {
@@ -77,14 +79,16 @@ export default function Studio() {
   const [source, setSource] = useState<Asset | null>(null);
   const [sourceStart, setSourceStart] = useState(0);
   const monitorElement = useRef<HTMLDivElement>(null);
-  const sourceDrag = useRef<{ id: string; x: number; y: number } | null>(null);
+  const sourceDrag = useRef<{ id: string; x: number; y: number; fromPreview?: boolean } | null>(null);
+  const [dragGhost, setDragGhost] = useState<{ asset: Asset; x: number; y: number; fromPreview: boolean; overPreview: boolean } | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [sourceMenu, setSourceMenu] = useState<{ asset: Asset; x: number; y: number } | null>(null);
+  const sourceMenuRef = useRef<HTMLDivElement>(null);
   const [beatId, setBeatId] = useState("");
   const [clipId, setClipId] = useState("");
   const [time, setTime] = useState(0);
   const [seekRequest, setSeekRequest] = useState(0);
   const [allowGaps, setAllowGaps] = useState(false);
-  const [search, setSearch] = useState("");
   const applied = useRef("");
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [downloadDir, setDownloadDir] = useState("");
@@ -289,7 +293,6 @@ export default function Studio() {
           .filter((a) => a.kind === "video" || a.kind === "image")
           .map((a) => a.id);
         if (visuals.length) {
-          p.visualIds.push(...visuals);
           clearScenes(p);
         }
       });
@@ -304,40 +307,72 @@ export default function Studio() {
     // Pointer gestures keep internal preview dragging independent of Explorer imports.
     const cancel = () => {
       sourceDrag.current = null;
+      setDragGhost(null);
+      document.body.classList.remove("sc-dragging-source");
+    };
+    const move = (event: PointerEvent) => {
+      const drag = sourceDrag.current;
+      if (!drag || Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 5) return;
+      const asset = projectRef.current?.assets.find((a) => a.id === drag.id);
+      const bounds = monitorElement.current?.getBoundingClientRect();
+      if (!asset || !bounds) return;
+      document.body.classList.add("sc-dragging-source");
+      setDragGhost({ asset, x: event.clientX, y: event.clientY, fromPreview: !!drag.fromPreview, overPreview: event.clientX >= bounds.left && event.clientX <= bounds.right && event.clientY >= bounds.top && event.clientY <= bounds.bottom });
     };
     const finish = (event: PointerEvent) => {
       const drag = sourceDrag.current;
-      sourceDrag.current = null;
+      cancel();
       if (
         !drag ||
         Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 8
       )
         return;
       const bounds = monitorElement.current?.getBoundingClientRect();
-      if (
-        !bounds ||
-        event.clientX < bounds.left ||
-        event.clientX > bounds.right ||
-        event.clientY < bounds.top ||
-        event.clientY > bounds.bottom
-      )
+      if (!bounds || busyRef.current) return;
+      const overPreview = event.clientX >= bounds.left && event.clientX <= bounds.right && event.clientY >= bounds.top && event.clientY <= bounds.bottom;
+      if (drag.fromPreview) {
+        if (!overPreview && event.clientX >= 0 && event.clientX <= window.innerWidth && event.clientY >= 0 && event.clientY <= window.innerHeight) {
+          change((p) => { p.visualIds = p.visualIds.filter((id) => id !== drag.id); clearScenes(p); });
+          setSource(null);
+        }
         return;
+      }
+      if (!overPreview) return;
       const asset = projectRef.current?.assets.find((a) => a.id === drag.id);
-      if (asset) {
+      if (asset && !busyRef.current) {
+        if (!projectRef.current?.visualIds.includes(asset.id)) change((p) => { p.visualIds.push(asset.id); clearScenes(p); });
         setSelected([asset.id]);
         setSourceStart(0);
         setSource({ ...asset });
       }
     };
     window.addEventListener("pointerup", finish);
+    window.addEventListener("pointermove", move);
     window.addEventListener("pointercancel", cancel);
     window.addEventListener("blur", cancel);
     return () => {
       window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointermove", move);
       window.removeEventListener("pointercancel", cancel);
       window.removeEventListener("blur", cancel);
+      cancel();
     };
   }, []);
+  useEffect(() => {
+    if (!sourceMenu) return;
+    sourceMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const dismiss = (event: Event) => {
+      if (!sourceMenuRef.current?.contains(event.target as Node)) setSourceMenu(null);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      window.removeEventListener("scroll", dismiss, true);
+      window.removeEventListener("resize", dismiss);
+    };
+  }, [sourceMenu]);
   useEffect(() => {
     let disposed = false;
     let off: (() => void) | undefined;
@@ -474,8 +509,35 @@ export default function Studio() {
     setSeekRequest((v) => v + 1);
   }
   function preview(asset: Asset, start = 0) {
+    if (step === 0 && (asset.kind === "video" || asset.kind === "image") && !projectRef.current?.visualIds.includes(asset.id)) {
+      change((p) => { p.visualIds.push(asset.id); clearScenes(p); });
+    }
     setSourceStart(start);
     setSource({ ...asset });
+  }
+  function removeSources(ids: string[]) {
+    if (busyRef.current) return;
+    change((p) => {
+      if (ids.includes(p.voiceId ?? "") || ids.includes(p.scriptId ?? "")) {
+        if (ids.includes(p.voiceId ?? "")) p.voiceId = null;
+        if (ids.includes(p.scriptId ?? "")) p.scriptId = null;
+        clearSpeech(p);
+      } else if (p.visualIds.some((id) => ids.includes(id))) clearScenes(p);
+      p.assets = p.assets.filter((a) => !ids.includes(a.id));
+      p.visualIds = p.visualIds.filter((id) => !ids.includes(id));
+    });
+    if (source && ids.includes(source.id)) setSource(null);
+    setSelected((current) => current.filter((id) => !ids.includes(id)));
+    setSourceMenu(null);
+  }
+  function openSourceMenu(event: React.MouseEvent, asset: Asset) {
+    event.preventDefault();
+    setSourceMenu({ asset, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 188)), y: Math.max(8, Math.min(event.clientY, window.innerHeight - 100)) });
+  }
+  function beginSourceDrag(event: React.PointerEvent, asset: Asset, fromPreview = false) {
+    if (event.button !== 0 || busy || step !== 0) return;
+    sourceDrag.current = { id: asset.id, x: event.clientX, y: event.clientY, fromPreview };
+    document.body.classList.add("sc-dragging-source");
   }
   function saveBeat(beat: Beat) {
     const p = projectRef.current!;
@@ -592,9 +654,6 @@ export default function Studio() {
         (a.kind === "video" || a.kind === "image") &&
         project.visualIds.includes(a.id),
     ) ?? [];
-  const totalFrames = project
-    ? Math.ceil(project.duration * fpsOf(project) - 1e-7)
-    : 0;
   const activeProfile = project?.settings.profile ?? runtimeProfile;
   const runtimeReady = Boolean(
     runtime?.pythonReady &&
@@ -740,82 +799,24 @@ export default function Studio() {
                       </button>
                       <button
                         disabled={busy || !selected.length}
-                        onClick={() =>
-                          change((p) => {
-                            if (
-                              selected.includes(p.voiceId ?? "") ||
-                              selected.includes(p.scriptId ?? "")
-                            ) {
-                              p.voiceId = selected.includes(p.voiceId ?? "")
-                                ? null
-                                : p.voiceId;
-                              p.scriptId = selected.includes(p.scriptId ?? "")
-                                ? null
-                                : p.scriptId;
-                              clearSpeech(p);
-                            } else if (
-                              p.visualIds.some((id) => selected.includes(id))
-                            )
-                              clearScenes(p);
-                            p.assets = p.assets.filter(
-                              (a) => !selected.includes(a.id),
-                            );
-                            p.visualIds = p.visualIds.filter(
-                              (id) => !selected.includes(id),
-                            );
-                            setSource(null);
-                            setSelected([]);
-                          })
-                        }
+                        onClick={() => removeSources(selected)}
                       >
                         Remove selected
                       </button>
                     </div>
                     <label>
                       Voiceover
-                      <select
-                        disabled={busy}
-                        value={project.voiceId ?? ""}
-                        onChange={(e) =>
-                          change((p) => {
-                            p.voiceId = e.target.value || null;
-                            clearSpeech(p);
-                          })
-                        }
-                      >
-                        <option value="">Choose recording</option>
-                        {project.assets
-                          .filter(
-                            (a) => a.kind === "voice" || a.kind === "video",
-                          )
-                          .map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.name}
-                            </option>
-                          ))}
-                      </select>
+                      <Dropdown label="Voiceover" disabled={busy} value={project.voiceId ?? ""}
+                        options={[{ value: "", label: "Choose recording" }, ...project.assets.filter((a) => a.kind === "voice" || a.kind === "video").map((a) => ({ value: a.id, label: a.name }))]}
+                        onChange={(value) => change((p) => { p.voiceId = value || null; clearSpeech(p); })} />
+                      <button type="button" className="sc-remove-source" disabled={busy || !project.voiceId} onClick={() => removeSources([project.voiceId!])}>Remove voiceover</button>
                     </label>
                     <label>
                       Script
-                      <select
-                        disabled={busy}
-                        value={project.scriptId ?? ""}
-                        onChange={(e) =>
-                          change((p) => {
-                            p.scriptId = e.target.value || null;
-                            clearSpeech(p);
-                          })
-                        }
-                      >
-                        <option value="">Choose script</option>
-                        {project.assets
-                          .filter((a) => a.kind === "script")
-                          .map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.name}
-                            </option>
-                          ))}
-                      </select>
+                      <Dropdown label="Script" disabled={busy} value={project.scriptId ?? ""}
+                        options={[{ value: "", label: "Choose script" }, ...project.assets.filter((a) => a.kind === "script").map((a) => ({ value: a.id, label: a.name }))]}
+                        onChange={(value) => change((p) => { p.scriptId = value || null; clearSpeech(p); })} />
+                      <button type="button" className="sc-remove-source" disabled={busy || !project.scriptId} onClick={() => removeSources([project.scriptId!])}>Remove script</button>
                     </label>
                     <div className="sc-footage-slot">
                       <div className="sc-row sc-between">
@@ -825,9 +826,12 @@ export default function Studio() {
                         </span>
                       </div>
                       <div className="sc-thumbnails">
-                        {media.slice(0, 4).map((a) => (
+                        {project.assets.filter((a) => a.kind === "video" || a.kind === "image").map((a) => (
                           <button
                             key={a.id}
+                            title="Drag to preview · Right-click for actions"
+                            onPointerDown={(e) => beginSourceDrag(e, a)}
+                            onContextMenu={(e) => openSourceMenu(e, a)}
                             onClick={() => setSelected([a.id])}
                             onDoubleClick={() => preview(a)}
                           >
@@ -845,91 +849,15 @@ export default function Studio() {
                               />
                             )}
                             <span>{a.name}</span>
+                            {project.visualIds.includes(a.id) && <i className="sc-analysis-tick" aria-label="Added to source preview" title="Added to source preview">✓</i>}
                           </button>
                         ))}
                       </div>
                       {!media.length && (
                         <p className="sc-muted">
-                          Import footage, then choose sources below.
+                          Drag footage into the preview or right-click and choose Add.
                         </p>
                       )}
-                    </div>
-                    <input
-                      aria-label="Search sources"
-                      placeholder="Search sources"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                    <div className="sc-source-list">
-                      {project.assets
-                        .filter((a) =>
-                          a.name.toLowerCase().includes(search.toLowerCase()),
-                        )
-                        .map((a) => (
-                          <div
-                            key={a.id}
-                            role="button"
-                            tabIndex={0}
-                            onPointerDown={(e) => {
-                              if (
-                                e.button === 0 &&
-                                !(e.target as Element).closest(
-                                  "input,label,button",
-                                )
-                              )
-                                sourceDrag.current = {
-                                  id: a.id,
-                                  x: e.clientX,
-                                  y: e.clientY,
-                                };
-                            }}
-                            className={`sc-source-row ${selected.includes(a.id) ? "selected" : ""}`}
-                            onClick={(e) =>
-                              setSelected(
-                                e.ctrlKey
-                                  ? selected.includes(a.id)
-                                    ? selected.filter((id) => id !== a.id)
-                                    : [...selected, a.id]
-                                  : [a.id],
-                              )
-                            }
-                            onDoubleClick={() => preview(a)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") setSelected([a.id]);
-                            }}
-                          >
-                            <div>
-                              <strong>{a.name}</strong>
-                              <small>
-                                {a.kind} · {(a.sizeBytes / 1048576).toFixed(1)}{" "}
-                                MB
-                              </small>
-                            </div>
-                            {(a.kind === "video" || a.kind === "image") && (
-                              <label
-                                className="sc-check"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  type="checkbox"
-                                  disabled={busy}
-                                  checked={project.visualIds.includes(a.id)}
-                                  onChange={(e) =>
-                                    change((p) => {
-                                      p.visualIds = e.target.checked
-                                        ? [...p.visualIds, a.id]
-                                        : p.visualIds.filter(
-                                            (id) => id !== a.id,
-                                          );
-                                      clearScenes(p);
-                                    })
-                                  }
-                                />
-                                Use
-                              </label>
-                            )}
-                          </div>
-                        ))}
                     </div>
                     <button
                       className="sc-primary sc-wide"
@@ -1182,74 +1110,9 @@ export default function Studio() {
               </div>
             </section>
             <section className="sc-center">
-              <div ref={monitorElement}>
-                <Monitor project={project} source={source} sourceStart={sourceStart} onCloseSource={() => setSource(null)} time={time} onTime={setTime} seekRequest={seekRequest} />
+              <div ref={monitorElement} className={dragGhost?.overPreview ? "sc-preview-drop-target" : ""}>
+                <Monitor onSourcePointerDown={(e) => { if (source && (source.kind === "video" || source.kind === "image")) beginSourceDrag(e, source, true); }} step={step} project={project} source={source} sourceStart={sourceStart} onCloseSource={() => setSource(null)} time={time} onTime={setTime} seekRequest={seekRequest} selectedClipId={clipId} onSelectClip={setClipId} />
               </div>
-              {step === 0 && <div className="sc-empty sc-source-guide"><strong>Source preview</strong><p>Select a footage item and double-click it to preview. The edit timeline appears after SyncCut has matched narration to visuals.</p></div>}
-              {step === 3 && <div className="sc-sequence">
-                <div className="sc-panel-head">
-                  <h2>Final timeline</h2>
-                  <span className="sc-mono">
-                    {clock(project.duration)} ·{" "}
-                    {project.settings.fpsNum / project.settings.fpsDen === 30
-                      ? "30"
-                      : (
-                          project.settings.fpsNum / project.settings.fpsDen
-                        ).toFixed(2)}{" "}
-                    fps
-                  </span>
-                </div>
-                <div
-                  className="sc-timeline"
-                  onClick={(e) => {
-                    if (e.target === e.currentTarget) {
-                      const box = e.currentTarget.getBoundingClientRect();
-                      seek(
-                        ((e.clientX - box.left) / box.width) * project.duration,
-                      );
-                    }
-                  }}
-                >
-                  {project.clips.map((c) => (
-                    <button
-                      key={c.id}
-                      title={`${c.state}: ${c.reason}`}
-                      className={`${c.state === "gap" ? "gap" : ""} ${c.id === clipId ? "selected" : ""}`}
-                      style={{
-                        left: `${(c.start / (totalFrames || 1)) * 100}%`,
-                        width: `${((c.end - c.start) / (totalFrames || 1)) * 100}%`,
-                      }}
-                      onClick={() => {
-                        setClipId(c.id);
-                        setStep(3);
-                      }}
-                      onDoubleClick={() => seek(c.start / fpsOf(project))}
-                    >
-                      {project.assets.find((a) => a.id === c.assetId)?.name ??
-                        "Gap"}
-                    </button>
-                  ))}
-                  <div
-                    className="sc-playhead"
-                    style={{
-                      left: `${Math.min(100, (time / (project.duration || 1)) * 100)}%`,
-                    }}
-                  />
-                </div>
-                <div className="sc-voice-track">
-                  {project.assets.find((a) => a.id === project.voiceId)?.name ??
-                    "Voiceover"}
-                </div>
-                <input
-                  aria-label="Sequence playhead"
-                  type="range"
-                  min="0"
-                  max={project.duration || 1}
-                  step={1 / fpsOf(project)}
-                  value={Math.min(time, project.duration || 1)}
-                  onChange={(e) => seek(Number(e.target.value))}
-                />
-              </div>}
               {step === 3 && clip && (
                 <div className="sc-alternatives">
                   <div className="sc-panel-head">
@@ -1656,6 +1519,19 @@ export default function Studio() {
           </section>
         </div>
       )}
+      {sourceMenu && createPortal(<div ref={sourceMenuRef} role="menu" aria-label="Source actions" className="sc-source-menu" style={{ left: sourceMenu.x, top: sourceMenu.y }} onKeyDown={(e) => { if (e.key === "Escape") setSourceMenu(null); }}>
+        {(sourceMenu.asset.kind === "video" || sourceMenu.asset.kind === "image") && <button role="menuitem" disabled={busy} onClick={() => {
+          const asset = sourceMenu.asset;
+          if (!projectRef.current?.visualIds.includes(asset.id)) change((p) => { p.visualIds.push(asset.id); clearScenes(p); });
+          setSelected([asset.id]); preview(asset); setSourceMenu(null);
+        }}>Add to preview</button>}
+        <button role="menuitem" disabled={busy} onClick={() => removeSources([sourceMenu.asset.id])}>Remove from project</button>
+      </div>, document.body)}
+      {dragGhost && createPortal(<div className="sc-source-drag-ghost" style={{ left: dragGhost.x + 14, top: dragGhost.y + 14 }}>
+        {dragGhost.asset.kind === "image" ? <img src={safeConvertFileSrc(dragGhost.asset.path)} alt="" /> : <video src={safeConvertFileSrc(dragGhost.asset.path)} muted preload="metadata" />}
+        <span>{dragGhost.asset.name}</span>
+        <small>{dragGhost.fromPreview ? dragGhost.overPreview ? "Move outside preview to deselect" : "Release to deselect" : dragGhost.overPreview ? "Release to add to preview" : "Drop into source preview"}</small>
+      </div>, document.body)}
     </main>
   );
 }

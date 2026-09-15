@@ -9,7 +9,7 @@ on:
       tag:
         description: 'Release tag (e.g. v0.1.0)'
         required: false
-        default: 'v0.3.0'
+        default: 'v0.3.1'
 
 jobs:
   release:
@@ -84,14 +84,14 @@ jobs:
       - name: Create updater metadata
         shell: pwsh
         run: |
-          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } elseif ('${{ inputs.tag }}') { '${{ inputs.tag }}' } else { 'v0.3.0' }
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } elseif ('${{ inputs.tag }}') { '${{ inputs.tag }}' } else { 'v0.3.1' }
           $installer = Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter '*.exe' -File | Select-Object -First 1
           if (-not $installer) { throw 'NSIS updater installer was not created.' }
           $signaturePath = "$($installer.FullName).sig"
           if (-not (Test-Path -LiteralPath $signaturePath)) { throw 'Updater signature was not created.' }
           $metadata = [ordered]@{
             version = $tag.TrimStart('v')
-            notes = 'SyncCut update: runtime storage selection, download progress and in-app updating.'
+            notes = 'SyncCut 0.3.1: stage-specific previews, fixed three-track timeline, improved source selection and dropdowns, and bundled FFmpeg detection.'
             pub_date = (Get-Date).ToUniversalTime().ToString('o')
             platforms = @{ 'windows-x86_64' = @{ url = "https://github.com/pecora31/SyncCut/releases/download/$tag/$($installer.Name)"; signature = (Get-Content -Raw $signaturePath).Trim() } }
           }
@@ -102,9 +102,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.3.0' }}
-          name: SyncCut ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.3.0' }}
-          body: Candidate editor build with an in-app local AI setup assistant. FFmpeg is bundled; Python packages and selected model weights are installed explicitly from the app. Complete customer GPU/Premiere acceptance before delivery.
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.3.1' }}
+          name: SyncCut ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.3.1' }}
+          body: |
+            ## Thay đổi / Changes
+            - Preview riêng theo bước: Source ở bước 1; voiceover cùng script ở bước 2; bản ghép hình/video ở bước 3–4.
+            - Timeline cố định, màu ba luồng dễ phân biệt, con trỏ phát và các đoạn script/voiceover theo kết quả AI.
+            - Kéo thả footage vào preview với bóng thumbnail; kéo ra ngoài để bỏ chọn; menu Add và gỡ từng file khỏi dự án.
+            - Dropdown Voiceover/Script giữ đúng chiều rộng ô chọn, hỗ trợ bàn phím và tên file dài.
+            - Sửa nhận diện FFmpeg đi kèm cho tải YouTube và ẩn cửa sổ tiến trình media trên Windows.
+            - Stage-specific previews, fixed timeline, drag-and-drop source selection, refined dropdowns, and bundled FFmpeg detection.
+
+            Kiểm tra biên dịch được thực hiện qua GitHub Actions. AI trên GPU khách hàng và thao tác Premiere cần được kiểm tra thực tế.
           draft: false
           prerelease: false
           files: |

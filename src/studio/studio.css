@@ -277,6 +277,7 @@
 }
 .sc-thumbnails video,
 .sc-thumbnails img {
+  pointer-events: none;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -311,7 +312,23 @@
 }
 .sc-source-row > div {
   min-width: 0;
+  flex: 1;
 }
+.sc-analysis-tick { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: #287a61; border: 1px solid #a8f0db; color: #fff; font-size: 14px; font-style: normal; box-shadow: 0 2px 6px #0008; pointer-events: none; }
+.sc-studio .sc-remove-source { padding: 3px 8px; font-size: 11px; color: #dfb6b6; flex-shrink: 0; }
+.sc-studio label > .sc-remove-source { margin-top: 5px; align-self: flex-end; }
+.sc-source-menu { position: fixed; z-index: 10000; width: 180px; padding: 4px; box-sizing: border-box; background: #202020; border: 1px solid #505050; border-radius: 6px; box-shadow: 0 8px 24px #0008; }
+.sc-source-menu button { display: block; width: 100%; padding: 9px 8px; background: transparent; border: 0; border-radius: 3px; text-align: left; color: #ddd; font: inherit; font-size: 12px; cursor: pointer; }
+.sc-source-menu button:hover, .sc-source-menu button:focus-visible { background: #374654; outline: none; }
+.sc-source-menu button:disabled { opacity: .45; cursor: default; }
+.sc-thumbnails button, .sc-draggable-preview { cursor: grab; touch-action: none; user-select: none; }
+.sc-draggable-preview video, .sc-draggable-preview img { pointer-events: none; }
+body.sc-dragging-source, body.sc-dragging-source * { cursor: grabbing !important; user-select: none !important; }
+.sc-preview-drop-target { outline: 2px solid #82b9e8; outline-offset: -2px; border-radius: 5px; }
+.sc-source-drag-ghost { position: fixed; z-index: 11000; pointer-events: none; width: 180px; border: 1px solid #8bbbdc; border-radius: 5px; overflow: hidden; background: #17232de6; opacity: .8; box-shadow: 0 8px 22px #0008; color: #eef6ff; }
+.sc-source-drag-ghost img, .sc-source-drag-ghost video { width: 100%; height: 90px; object-fit: cover; display: block; }
+.sc-source-drag-ghost span, .sc-source-drag-ghost small { display: block; padding: 5px 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.sc-source-drag-ghost small { color: #a5d4f3; }
 .sc-source-row strong {
   font-weight: 400;
   display: block;
@@ -503,6 +520,7 @@
 .sc-transport .sc-volume {
   max-width: 55px;
 }
+.sc-transport-spacer { flex: 1; }
 .sc-caption {
   border-top: 1px solid #333;
   padding: 10px 14px;
@@ -824,7 +842,7 @@
   margin: 14px 0;
   background: #191919;
 }
-.sc-guide-card, .sc-source-guide {
+.sc-guide-card {
   border: 1px solid #4a4a4a;
   border-radius: 6px;
   padding: 16px;
@@ -832,9 +850,40 @@
   color: #ccc;
   line-height: 1.5;
 }
-.sc-guide-card strong, .sc-source-guide strong { display: block; color: #f0f0f0; font-size: 13px; margin-bottom: 5px; }
-.sc-guide-card p, .sc-source-guide p { margin: 0 0 12px; }
-.sc-source-guide { min-height: 340px; display: grid; align-content: center; text-align: center; }
+.sc-guide-card strong { display: block; color: #f0f0f0; font-size: 13px; margin-bottom: 5px; }
+.sc-guide-card p { margin: 0 0 12px; }
+.sc-tracker { border-top: 1px solid #383838; background: #171717; padding: 10px; min-height: 232px; }
+.sc-tracker-toolbar { display: flex; align-items: center; gap: 12px; font-size: 11px; margin-bottom: 8px; }
+.sc-tracker-toolbar > span { color: #aaa; font: 10px Consolas, monospace; }
+.sc-tracker-scroll { overflow: hidden; border: 1px solid #333; }
+.sc-tracker-content.sc-import-tracks { cursor: default; }
+.sc-narration-preview { width: 100%; padding: 24px; }
+.sc-narration-preview p { font-size: clamp(16px, 2vw, 25px); line-height: 1.6; max-height: 100%; overflow-y: auto; }
+.sc-narration-preview small { color: #888; }
+.sc-tracker-content { position: relative; min-width: 100%; touch-action: none; user-select: none; cursor: ew-resize; background: #111; padding: 6px 0; display: flex; flex-direction: column; gap: 6px; }
+.sc-tracker-lane { --track-bg: #20344c; --track-fill: #2c4c70; --track-border: #5e8ab9; --track-label: #badcff; position: relative; height: 50px; flex-shrink: 0; margin: 0; border: 1px solid var(--track-border); background: var(--track-bg); box-sizing: border-box; }
+.sc-tracker-lane.audio { --track-bg: #193c37; --track-fill: #246052; --track-border: #4ba78f; --track-label: #a8f0db; }
+.sc-tracker-lane.script { --track-bg: #352847; --track-fill: #574076; --track-border: #9b7ac7; --track-label: #e2ccff; }
+.sc-tracker-lane-label { position: absolute; left: 8px; top: 5px; z-index: 2; font-size: 10px; line-height: 12px; font-weight: 600; color: var(--track-label); pointer-events: none; }
+.sc-tracker-clip { position: absolute; top: 0; height: 100%; box-sizing: border-box; border: 0; box-shadow: inset -1px 0 var(--track-border); background: var(--track-fill); color: #f0f3f8; padding: 24px 8px 5px; font-size: 11px; line-height: 16px; min-width: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-tracker-clip.selected { box-shadow: inset 0 0 0 2px #eee; }
+.sc-tracker-clip.gap { background: repeating-linear-gradient(135deg, #222, #222 5px, #181818 5px, #181818 10px); color: #999; }
+.sc-tracker-audio { height: 100%; box-sizing: border-box; background: var(--track-fill); padding: 24px 8px 5px; color: #f0f3f8; font-size: 11px; line-height: 16px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sc-tracker-empty { display: block; padding: 24px 8px 5px; color: var(--track-label); font-size: 11px; line-height: 16px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sc-tracker-playhead { position: absolute; top: 0; bottom: 0; width: 1px; background: #eee; z-index: 3; pointer-events: none; }
+.sc-tracker-playhead > span { position: absolute; top: 0; left: -5px; width: 11px; height: 9px; background: #eee; clip-path: polygon(0 0, 100% 0, 100% 50%, 50% 100%, 0 50%); }
+.sc-tracker-help { display: block; color: #777; margin-top: 7px; font-size: 10px; }
+.sc-studio .sc-dropdown-trigger { width: 100%; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; text-align: left; background: #191919; border: 1px solid #454545; border-radius: 5px; color: #dedede; }
+.sc-dropdown-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-dropdown-trigger > svg { flex-shrink: 0; color: #aaa; }
+.sc-studio .sc-dropdown-trigger:hover:not(:disabled) { background: #232323; border-color: #666; }
+.sc-studio .sc-dropdown-trigger:focus-visible { outline: 2px solid #85abd2; outline-offset: 2px; }
+.sc-dropdown-menu { position: fixed; z-index: 10000; box-sizing: border-box; padding: 4px; overflow-x: hidden; overflow-y: auto; background: #202020; border: 1px solid #505050; border-radius: 6px; box-shadow: 0 8px 24px #0008; font-family: inherit; font-size: 12px; color: #ddd; outline: none; scrollbar-width: thin; scrollbar-color: #555 #202020; }
+.sc-dropdown-option { display: flex; align-items: center; gap: 8px; min-height: 34px; box-sizing: border-box; padding: 8px; border-radius: 3px; cursor: pointer; }
+.sc-dropdown-option > span:first-child { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-dropdown-option > span:last-child { width: 14px; flex-shrink: 0; text-align: center; color: #b7d7f5; }
+.sc-dropdown-option.selected { color: #d9ebff; background: #2a3c4e; }
+.sc-dropdown-option.active { background: #374654; }
 .sc-visual-plan .sc-passage { min-height: 92px; }
 .sc-visual-plan .sc-passage strong { display: block; text-align: left; margin-top: 7px; }
 .sc-setup-result.completed {

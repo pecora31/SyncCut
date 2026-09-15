@@ -1,6 +1,6 @@
 [package]
 name = "tauri-app"
-version = "0.3.0"
+version = "0.3.1"
 description = "SyncCut local voice-to-footage editing studio"
 authors = ["you"]
 edition = "2021"

@@ -221,8 +221,13 @@ pub fn ensure_ytdlp() -> Result<PathBuf, String> {
 
 fn get_media_duration(file_path: &str) -> Result<f64, String> {
     let ffprobe_bin = find_binary("ffprobe");
-    let output = Command::new(ffprobe_bin)
-        .args([
+    let mut command = Command::new(ffprobe_bin);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    let output = command.args([
             "-v",
             "error",
             "-show_entries",
@@ -687,10 +692,9 @@ async fn download_youtube_media(
             }
         }
 
-        let runtime=studio::studio_runtime(app.clone(),Some(false))?;
-        if runtime["binariesReady"]!=true {return Err("Install and select the FFmpeg runtime before downloading media.".into());}
+        let media_bin = studio::download_media_bin(&app)?;
         args.push("--ffmpeg-location".into());
-        args.push(runtime["binDir"].as_str().ok_or("Missing FFmpeg directory.")?.into());
+        args.push(media_bin);
         args.push("--".into());
         args.push(options.url.clone());
 
@@ -875,8 +879,13 @@ async fn prepare_youtube_preview_cache(url: String, height: Option<i64>) -> Resu
 
         let filter = format!("bv*[height<={h}]+ba/b[height<={h}]/18/best", h = preview_h);
         let ytdlp_path = ensure_ytdlp()?;
-        let output = Command::new(&ytdlp_path)
-            .args([
+        let mut command = Command::new(&ytdlp_path);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let output = command.args([
                 "-f",
                 &filter,
                 "--merge-output-format",
