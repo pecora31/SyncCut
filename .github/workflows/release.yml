@@ -9,7 +9,7 @@ on:
       tag:
         description: 'Release tag (e.g. v0.1.0)'
         required: false
-        default: 'v0.2.3'
+        default: 'v0.2.4'
 
 jobs:
   release:
@@ -84,7 +84,7 @@ jobs:
       - name: Create updater metadata
         shell: pwsh
         run: |
-          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } elseif ('${{ inputs.tag }}') { '${{ inputs.tag }}' } else { 'v0.2.3' }
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } elseif ('${{ inputs.tag }}') { '${{ inputs.tag }}' } else { 'v0.2.4' }
           $installer = Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter '*.exe' -File | Select-Object -First 1
           if (-not $installer) { throw 'NSIS updater installer was not created.' }
           $signaturePath = "$($installer.FullName).sig"
@@ -102,8 +102,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.2.3' }}
-          name: SyncCut ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.2.3' }}
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.2.4' }}
+          name: SyncCut ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.2.4' }}
           body: Candidate editor build with an in-app local AI setup assistant. FFmpeg is bundled; Python packages and selected model weights are installed explicitly from the app. Complete customer GPU/Premiere acceptance before delivery.
           draft: false
           prerelease: false

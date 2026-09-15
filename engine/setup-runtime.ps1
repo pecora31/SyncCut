@@ -48,9 +48,8 @@ function Install-RuntimePackages([string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw 'Package installation failed. Fix the reported error and rerun setup.' }
 }
 $env:PIP_NO_CACHE_DIR = '1'
-# CUDA PyTorch is several GB. Avoid retaining another full wheel in the user's
-# profile cache, and discard a partial wheel left by an interrupted setup.
-& $runtimePython -m pip cache remove torch torchvision torchaudio *> $null
+# CUDA PyTorch is several GB. Do not retain another full wheel in the user's
+# profile cache while installing the local runtime.
 Set-SetupProgress 'packages' 'Installing local AI and GPU packages…'
 Install-RuntimePackages @('install','pip==25.2')
 Install-RuntimePackages @('install','torch==2.7.1','torchvision==0.22.1','torchaudio==2.7.1','--index-url','https://download.pytorch.org/whl/cu126')
