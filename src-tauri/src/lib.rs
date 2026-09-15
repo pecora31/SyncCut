@@ -1150,6 +1150,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(studio::StudioState::default())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             use tauri::Manager;
             let scope = app.asset_protocol_scope();

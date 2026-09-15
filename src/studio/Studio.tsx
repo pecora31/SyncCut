@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+import { check } from "@tauri-apps/plugin-updater";
 import { safeConvertFileSrc } from "../utils/mediaUtils";
 import { Monitor } from "./Monitor";
 import { YouTubeDownloadModal } from "../components/workspace/YouTubeDownloadModal";
@@ -69,6 +70,8 @@ export default function Studio() {
   );
   const [runtimeTextIndex, setRuntimeTextIndex] = useState(false);
   const [runtimeChecking, setRuntimeChecking] = useState(false);
+  const [updateState, setUpdateState] = useState<"idle" | "checking" | "ready" | "latest" | "installing">("idle");
+  const [updateVersion, setUpdateVersion] = useState("");
   const [runtimeInstallRoot, setRuntimeInstallRoot] = useState("");
   const [modelInstallRoot, setModelInstallRoot] = useState("");
   const [source, setSource] = useState<Asset | null>(null);
@@ -454,6 +457,17 @@ export default function Studio() {
       setError(errorText(e));
     }
   }
+  async function updateApp() {
+    try {
+      setUpdateState("checking");
+      const update = await check();
+      if (!update) { setUpdateState("latest"); return; }
+      setUpdateVersion(update.version);
+      setUpdateState("ready");
+      setUpdateState("installing");
+      await update.downloadAndInstall();
+    } catch (e) { setUpdateState("idle"); setError(`Could not update SyncCut: ${errorText(e)}`); }
+  }
   function seek(value: number) {
     setSource(null);
     setTime(value);
@@ -607,6 +621,9 @@ export default function Studio() {
           onClick={() => setRuntimeOpen(true)}
         >
           {runtimeReady ? "AI ready" : "Set up AI"}
+        </button>
+        <button className="sc-update" disabled={updateState === "checking" || updateState === "installing"} onClick={updateApp}>
+          {updateState === "checking" ? "Checking update…" : updateState === "installing" ? `Installing ${updateVersion || "update"}…` : updateState === "latest" ? "App is up to date" : "Update app"}
         </button>
       </header>
       {error && (

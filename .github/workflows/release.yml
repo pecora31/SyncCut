@@ -9,7 +9,7 @@ on:
       tag:
         description: 'Release tag (e.g. v0.1.0)'
         required: false
-        default: 'v0.2.0'
+        default: 'v0.2.3'
 
 jobs:
   release:
@@ -75,21 +75,43 @@ jobs:
       - name: Check Rust contracts compile
         run: cargo check --tests --manifest-path src-tauri/Cargo.toml
 
-      - name: Build Tauri Application
+      - name: Build signed Tauri updater artifacts
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri build
+
+      - name: Create updater metadata
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } elseif ('${{ inputs.tag }}') { '${{ inputs.tag }}' } else { 'v0.2.3' }
+          $installer = Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter '*.exe' -File | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS updater installer was not created.' }
+          $signaturePath = "$($installer.FullName).sig"
+          if (-not (Test-Path -LiteralPath $signaturePath)) { throw 'Updater signature was not created.' }
+          $metadata = [ordered]@{
+            version = $tag.TrimStart('v')
+            notes = 'SyncCut update: runtime storage selection, download progress and in-app updating.'
+            pub_date = (Get-Date).ToUniversalTime().ToString('o')
+            platforms = @{ 'windows-x86_64' = @{ url = "https://github.com/pecora31/SyncCut/releases/download/$tag/$($installer.Name)"; signature = (Get-Content -Raw $signaturePath).Trim() } }
+          }
+          $metadata | ConvertTo-Json -Depth 5 | Set-Content latest.json -Encoding utf8
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.2.0' }}
-          name: SyncCut ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.2.0' }}
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.2.3' }}
+          name: SyncCut ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.2.3' }}
           body: Candidate editor build with an in-app local AI setup assistant. FFmpeg is bundled; Python packages and selected model weights are installed explicitly from the app. Complete customer GPU/Premiere acceptance before delivery.
-          draft: true
-          prerelease: true
+          draft: false
+          prerelease: false
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.sig
             src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/msi/*.sig
+            latest.json
             bin/yt-dlp-release.txt
             bin/ffmpeg-release.txt
