@@ -1,0 +1,77 @@
+site_name: SyncCut · Hướng dẫn sử dụng
+site_description: Hướng dẫn sử dụng SyncCut Studio cho người dùng cuối
+site_url: https://pecora31.github.io/SyncCut/
+repo_url: https://github.com/pecora31/SyncCut
+repo_name: pecora31/SyncCut
+edit_uri: edit/main/docs-site/docs/
+docs_dir: docs
+theme:
+  name: material
+  language: vi
+  logo: null
+  favicon: null
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.action.edit
+    - content.code.copy
+  font: false
+  palette:
+    - media: '(prefers-color-scheme: light)'
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Chuyển sang nền tối
+    - media: '(prefers-color-scheme: dark)'
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Chuyển sang nền sáng
+  alternate:
+    - name: Tiếng Việt
+      link: ./
+      lang: vi
+    - name: English
+      link: ../en/
+      lang: en
+plugins:
+  - search
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+nav:
+  - Trang chủ: vi/index.md
+  - Bắt đầu:
+      - Yêu cầu hệ thống: vi/requirements.md
+      - Cài đặt lần đầu: vi/first-run.md
+      - Tạo project và import nguồn: vi/sources.md
+  - Quy trình làm việc:
+      - Tổng quan 4 bước: vi/workflow.md
+      - Kiểm tra voiceover và script: vi/recording.md
+      - Tìm và duyệt cảnh: vi/scenes.md
+      - Chỉnh timeline: vi/timeline.md
+      - Xuất sang Premiere: vi/export.md
+  - Vận hành:
+      - Model và tài nguyên máy: vi/models-and-resources.md
+      - Checkpoint, Pause và Resume: vi/jobs.md
+      - Quản lý project và cache: vi/projects.md
+  - Tra cứu:
+      - Xử lý sự cố: vi/troubleshooting.md
+      - Câu hỏi thường gặp: vi/faq.md
+      - Quyền riêng tư và giới hạn: vi/privacy-and-limits.md
+  - English:
+      - User guide: en/index.md
+      - Setup and workflow: en/setup-and-workflow.md
+      - Troubleshooting: en/troubleshooting.md
