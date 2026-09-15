@@ -1,0 +1,67 @@
+[
+  {
+    "id": 1,
+    "text": "Chào mừng bạn đến với SyncCut - công cụ tự động hóa tiền kỳ video chuyên nghiệp.",
+    "startTime": 0.0,
+    "endTime": 3.55,
+    "duration": 3.55,
+    "assetType": "video",
+    "sourceMediaName": "sample_broll.mp4",
+    "sourceMediaPath": "C:\\Users\\Tran Bao Long\\Desktop\\VuLoc\\demo_assets\\sample_broll.mp4",
+    "sourceIn": 0.0,
+    "sourceOut": 3.55,
+    "matchConfidence": 93.0
+  },
+  {
+    "id": 2,
+    "text": "Hệ thống sẽ tải footage B-Roll từ YouTube và phân tích kịch bản của bạn.",
+    "startTime": 3.55,
+    "endTime": 6.69,
+    "duration": 3.13,
+    "assetType": "video",
+    "sourceMediaName": "sample_broll.mp4",
+    "sourceMediaPath": "C:\\Users\\Tran Bao Long\\Desktop\\VuLoc\\demo_assets\\sample_broll.mp4",
+    "sourceIn": 9.0,
+    "sourceOut": 12.13,
+    "matchConfidence": 93.0
+  },
+  {
+    "id": 3,
+    "text": "AI sẽ tự động căn khớp từng câu thoại với mốc thời gian mili-giây chính xác.",
+    "startTime": 6.69,
+    "endTime": 10.03,
+    "duration": 3.34,
+    "assetType": "video",
+    "sourceMediaName": "sample_broll.mp4",
+    "sourceMediaPath": "C:\\Users\\Tran Bao Long\\Desktop\\VuLoc\\demo_assets\\sample_broll.mp4",
+    "sourceIn": 4.5,
+    "sourceOut": 7.84,
+    "matchConfidence": 90.0
+  },
+  {
+    "id": 4,
+    "text": "Toàn bộ timeline và track âm thanh sẽ được xuất thẳng sang file Adobe Premiere Pro XML.",
+    "startTime": 10.03,
+    "endTime": 13.58,
+    "duration": 3.55,
+    "assetType": "video",
+    "sourceMediaName": "sample_broll.mp4",
+    "sourceMediaPath": "C:\\Users\\Tran Bao Long\\Desktop\\VuLoc\\demo_assets\\sample_broll.mp4",
+    "sourceIn": 9.0,
+    "sourceOut": 12.55,
+    "matchConfidence": 89.0
+  },
+  {
+    "id": 5,
+    "text": "Cảm ơn bạn đã trải nghiệm SyncCut.",
+    "startTime": 13.58,
+    "endTime": 15.05,
+    "duration": 1.47,
+    "assetType": "video",
+    "sourceMediaName": "sample_broll.mp4",
+    "sourceMediaPath": "C:\\Users\\Tran Bao Long\\Desktop\\VuLoc\\demo_assets\\sample_broll.mp4",
+    "sourceIn": 4.5,
+    "sourceOut": 5.96,
+    "matchConfidence": 93.0
+  }
+]

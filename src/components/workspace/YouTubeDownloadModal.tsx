@@ -25,7 +25,7 @@ interface YouTubeMetadata {
   title: string;
   channel: string;
   duration: number;
-  duration_string: string;
+  durationString: string;
   availableVideoQualities: VideoQualityOption[];
   availableAudioQualities: AudioQualityOption[];
 }
@@ -206,11 +206,11 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
       let realSizeBytes = 0;
       let realDuration = metadata?.duration;
       try {
-        const fileInfo = await invoke<{ size_bytes: number; duration?: number }>('get_file_media_info', {
+        const fileInfo = await invoke<{ sizeBytes: number; duration?: number }>('get_file_media_info', {
           path: savedPath,
         });
         if (fileInfo) {
-          realSizeBytes = fileInfo.size_bytes;
+          realSizeBytes = fileInfo.sizeBytes;
           if (fileInfo.duration) realDuration = fileInfo.duration;
         }
       } catch {
@@ -237,7 +237,7 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-none p-4 select-none"
-      onClick={onClose}
+      onClick={()=>{if(!isDownloading)onClose();}}
     >
       <div
         className="w-full max-w-lg max-h-[92vh] overflow-y-auto bg-[#202020] border border-[#444444] rounded shadow-2xl p-4 flex flex-col gap-3 text-xs"
@@ -251,6 +251,7 @@ export const YouTubeDownloadModal: React.FC<YouTubeDownloadModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            disabled={isDownloading}
             className="px-2 py-0.5 text-xs text-[#808080] hover:text-white rounded transition-colors cursor-pointer"
           >
             Close

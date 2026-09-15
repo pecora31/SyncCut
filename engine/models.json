@@ -1,0 +1,33 @@
+{
+  "models": {
+    "asr_quality": {
+      "repo": "Systran/faster-whisper-large-v3",
+      "revision": "edaa852ec7e145841d8ffdb056a99866b5f0a478"
+    },
+    "align_en": {
+      "repo": "facebook/wav2vec2-base-960h",
+      "revision": "22aad52d435eb6dbaf354bdad9b0da84ce7d6156"
+    },
+    "vlm_quality": {
+      "repo": "Qwen/Qwen3-VL-8B-Instruct",
+      "revision": "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b"
+    },
+    "vlm_fast": {
+      "repo": "Qwen/Qwen3-VL-4B-Instruct",
+      "revision": "ebb281ec70b05090aa6165b016eac8ec08e71b17"
+    },
+    "text": {
+      "repo": "BAAI/bge-base-en-v1.5",
+      "revision": "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a"
+    },
+    "visual": {
+      "repo": "google/siglip2-so400m-patch14-384",
+      "revision": "e8e487298228002f3d8a82e0cd5c8ea9c567f57f"
+    },
+    "asr_fast": {
+      "repo": "distil-whisper/distil-large-v3.5-ct2",
+      "revision": "9793ccc07920e0f830e1dba0343efcdf0ef8c903"
+    }
+  },
+  "schemaVersion": 2
+}

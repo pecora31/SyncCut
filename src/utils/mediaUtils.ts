@@ -4,7 +4,9 @@ export function safeConvertFileSrc(filePath?: string | null): string {
   if (!filePath || typeof filePath !== 'string') return '';
   let clean = filePath.trim().replace(/\\/g, '/');
   // Strip Windows verbatim path prefix \\?\ if present
-  if (clean.startsWith('//?/')) {
+  if (clean.startsWith('//?/UNC/')) {
+    clean = '//'+clean.slice(8);
+  } else if (clean.startsWith('//?/')) {
     clean = clean.slice(4);
   }
   return convertFileSrc(clean);

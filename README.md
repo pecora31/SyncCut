@@ -1,54 +1,67 @@
-# SyncCut
+# SyncCut Studio 0.2
 
-High-performance desktop utility for automated speech-to-video alignment and NLE timeline sequence generation (Final Cut Pro 7 / Premiere Pro XML). Built on Tauri v2, Rust, and React.
+Local voiceover-to-footage rough-cut editor for Windows. React 19 / TypeScript, Tauri 2 / Rust, Python inference, SQLite project storage and FFmpeg media processing.
 
-## Overview
+## Workflow
 
-SyncCut automates the pre-editing pipeline by synchronizing voiceover tracks with script segments down to millisecond accuracy, matching visual footage, and exporting production-ready timeline sequences directly into NLE software (Adobe Premiere Pro, DaVinci Resolve, Final Cut Pro) without manual timeline slicing or transcodes.
+1. **Sources** — import and assign a recording, an English script and multiple footage/image sources.
+2. **Recording** — transcribe the actual audio, acoustically align observed words, and review differences against the script.
+3. **Scenes** — interpret script context, retrieve source windows with SigLIP 2 and inspect Qwen visual judgments with cited sampled frames.
+4. **Timeline** — refine suggestions, resolve explicit gaps, lock choices, split slots, adjust source start and export editing media plus Premiere XML.
 
-## Architecture
+The planner never fills an unmatched slot with arbitrary media. Model judgments remain suggestions for editorial review. Preview uses Tauri's native asset protocol; voiceover audio is the program clock. Unsupported source codecs may require external transcoding before preview.
 
-1. **Asset Management & Media Pool**: Local file indexing and native asset protocol streaming via Tauri v2 (`assetProtocol: scope: ["**"]`) with zero background HTTP server overhead.
-2. **Integrated Media Retrieval**: Embedded `yt-dlp` wrapper supporting video format queries, real-time download streaming metrics, and direct output folder routing.
-3. **Alignment Engine**: Speech segmentation and millisecond-accurate timestamp extraction using local Whisper models and Python alignment scripts against ground-truth text.
-4. **Timeline Serializer**: Standard-compliant Final Cut Pro 7 XML (`<xmeml version="4">`) export with frame-accurate In/Out/Start/End points and absolute media path resolution.
+## Processing and persistence
 
-## Technology Stack
+- Fast: distil-large-v3.5 CT2, English wav2vec2 CTC alignment, SigLIP 2 SO400M, Qwen3-VL 4B NF4.
+- Quality: faster-whisper large-v3, the same alignment/retrieval stages, Qwen3-VL 8B NF4.
+- Optional BGE-base-en-v1.5 searches captions already cached by earlier visual verification.
+- One heavy GPU stage at a time. Shared uses Fast with smaller CPU workloads. Pause stops the owned worker tree and retains completed checkpoints; it is not an OS-level GPU resource quota.
+- Projects are stored in `<project>/.synccut/project.sqlite`; revision checks prevent silent overwrites. Cache keys include media content hashes, model revisions and processing inputs.
+- Source changes are checked before matching/export. Export renders selected source ranges to a consistent frame clock, checks output frame counts and writes a source manifest. Original files are unchanged. Export clips have no extra handles.
 
-- **Runtime**: Tauri v2 (Rust)
-- **Frontend**: React 19, TypeScript, Vite
-- **Styling**: Tailwind CSS (strict monochrome neutral design system)
-- **Media Dependencies**: FFmpeg, FFprobe, yt-dlp
+This replaces the previous demo/fallback matching path. Old project data is not automatically migrated; import original sources into a new project folder. No automatic audio take deletion or claim of millisecond alignment accuracy is made.
 
-## Prerequisites
+## Customer runtime and acceptance
 
-- Node.js >= 18.x
-- Rust toolchain (Cargo stable >= 1.80)
-- `ffmpeg` and `yt-dlp` available in PATH or project `bin/` directory
-- Windows 10/11 (x64)
+See [customer setup and validation](docs/customer-validation.md). Intended target: 32 GB RAM, RTX 3060 12 GB, primarily English media. AI model weights and Python packages are installed separately on that computer using `engine/setup-runtime.ps1`. The runtime venv depends on its original Python installation and is not portable between machines.
 
-## Installation & Development
+The implementation has been checked statically on the development machine. Inference, resource benchmarks, UI interaction tests and Premiere round-trip acceptance are reserved for the customer computer. A successful build is not an end-to-end accuracy or performance result.
 
-```bash
-# Install frontend dependencies
-npm install
+## Development and packaging
 
-# Launch development build with hot reload
+Requires Node 22+, Rust stable, and a Windows x64 build environment. Place `yt-dlp.exe` in `bin/` for installer bundling. Python/model setup is unnecessary for compiling the editor.
+
+```powershell
+npm ci
 npm run tauri dev
 ```
 
-## Production Build
+Compile without running models or tests:
 
-```bash
-# Compile optimized native binary and installer bundles
-npm run tauri build
+```powershell
+npx tsc --noEmit
+cargo check --tests --manifest-path src-tauri/Cargo.toml
+npm run build
+npm run tauri build -- --bundles nsis
 ```
 
-Compiled artifacts will be located under `src-tauri/target/release/bundle/`:
-- Standalone Binary: `src-tauri/target/release/tauri-app.exe`
-- NSIS Installer: `src-tauri/target/release/bundle/nsis/SyncCut_0.1.0_x64-setup.exe`
-- MSI Package: `src-tauri/target/release/bundle/msi/SyncCut_0.1.0_x64_en-US.msi`
+`cargo check --tests` compiles the test contracts; it does not execute them. Customer-only execution instructions are in the runbook. CI creates draft prereleases pending target-machine acceptance.
+
+## Code map
+
+| Area | Location |
+|---|---|
+| Workflow UI, review, native preview | `src/studio/` |
+| Job supervision, SQLite revisions, model pack status | `src-tauri/src/studio/mod.rs` |
+| Timeline constraints and planning | `src-tauri/src/studio/domain.rs` |
+| FCP7 XML serialization | `src-tauri/src/studio/xml.rs` |
+| Offline speech, visual retrieval, media export | `engine/synccut_engine/` |
+| Exact model repositories / revisions | `engine/models.json` |
+| Customer setup, integrity check, resource sampler | `engine/*.ps1`, `engine/manage_models.py`, `engine/monitor_resources.py` |
+| Prepared contracts | `engine/tests/`, `src-tauri/src/studio/tests.rs` |
+| Earlier findings / proposed architecture | `audit/` |
 
 ## License
 
-This project is licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0).
+[GNU GPL v3](LICENSE). Review and retain the licenses of distributed runtime binaries and model repositories separately.
