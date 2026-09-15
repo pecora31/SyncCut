@@ -17,10 +17,12 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $taskRoot = [IO.Path]::GetFullPath($RuntimeRoot)
 $taskModelRoot = if ($ModelRoot) { [IO.Path]::GetFullPath($ModelRoot) } else { Join-Path $taskRoot 'models' }
+$engineRoot = $PSScriptRoot
 # Rust canonical paths use the Windows extended-path prefix (\\?\). PowerShell's
 # filesystem provider does not consistently accept that prefix in Join-Path.
 if ($taskRoot.StartsWith('\\?\')) { $taskRoot = $taskRoot.Substring(4) }
 if ($taskModelRoot.StartsWith('\\?\')) { $taskModelRoot = $taskModelRoot.Substring(4) }
+if ($engineRoot.StartsWith('\\?\')) { $engineRoot = $engineRoot.Substring(4) }
 $basePython = (Resolve-Path -LiteralPath $PythonExe).Path
 $mediaFolder = (Resolve-Path -LiteralPath $MediaBin).Path
 if ($taskRoot -eq [IO.Path]::GetPathRoot($taskRoot)) { throw 'Choose a dedicated runtime directory, not a drive root.' }
@@ -53,7 +55,7 @@ $env:PIP_NO_CACHE_DIR = '1'
 Set-SetupProgress 'packages' 'Installing local AI and GPU packages…'
 Install-RuntimePackages @('install','pip==25.2')
 Install-RuntimePackages @('install','torch==2.7.1','torchvision==0.22.1','torchaudio==2.7.1','--index-url','https://download.pytorch.org/whl/cu126')
-Install-RuntimePackages @('install','-r',(Join-Path $PSScriptRoot 'requirements.txt'))
+Install-RuntimePackages @('install','-r',([IO.Path]::Combine($engineRoot, 'requirements.txt')))
 & $runtimePython -m pip check
 if ($LASTEXITCODE -ne 0) { throw 'Runtime has conflicting dependencies.' }
 $binTarget = Join-Path $taskRoot 'bin'
@@ -72,13 +74,13 @@ Get-ChildItem -LiteralPath $mediaFolder -Filter '*.dll' -File | ForEach-Object {
 & $runtimePython -m pip freeze | Set-Content -LiteralPath (Join-Path $taskRoot 'installed-requirements.txt') -Encoding utf8
 if (-not $SkipModels) {
     Set-SetupProgress 'models' 'Preparing model downloads…'
-    $modelArgs = @((Join-Path $PSScriptRoot 'manage_models.py'),'install','--root',$taskRoot,'--model-root',$taskModelRoot,'--profile',$Profile)
+    $modelArgs = @([IO.Path]::Combine($engineRoot, 'manage_models.py'),'install','--root',$taskRoot,'--model-root',$taskModelRoot,'--profile',$Profile)
     if ($WithTextIndex) { $modelArgs += '--with-text' }
     & $runtimePython @modelArgs
     if ($LASTEXITCODE -ne 0) { throw 'Model installation incomplete. Rerun setup to resume downloads.' }
 }
 Set-SetupProgress 'verify' 'Checking the local GPU and media tools…'
-& $runtimePython (Join-Path $PSScriptRoot 'preflight.py') --root $taskRoot
+& $runtimePython ([IO.Path]::Combine($engineRoot, 'preflight.py')) --root $taskRoot
 if ($LASTEXITCODE -ne 0) { throw 'Runtime installed, but GPU/media validation failed. Check the NVIDIA driver and rerun setup.' }
 Write-Host "Runtime prepared and validated at $taskRoot"
 Set-SetupProgress 'ready' 'Runtime and selected models are ready.'
