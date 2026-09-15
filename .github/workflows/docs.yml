@@ -30,10 +30,10 @@ jobs:
       - name: Install documentation toolchain
         run: python -m pip install -r docs-site/requirements.txt
       - name: Build documentation
-        run: mkdocs build --config-file docs-site/mkdocs.yml --strict --site-dir docs-site/site
+        run: mkdocs build --config-file docs-site/mkdocs.yml --strict --site-dir "${{ github.workspace }}/site"
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: docs-site/site
+          path: site
   deploy:
     needs: build
     runs-on: ubuntu-latest
