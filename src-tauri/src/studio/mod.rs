@@ -477,10 +477,8 @@ pub fn studio_start_runtime_setup(
     if !["fast", "quality"].contains(&profile.as_str()) {
         return Err("Choose either the Fast or Quality model pack.".into());
     }
-    if state
-        .job
-        .lock()
-        .map_err(|e| e.to_string())?
+    let job_guard = state.job.lock().map_err(|e| e.to_string())?;
+    if job_guard
         .as_ref()
         .is_some_and(|job| job.status == "running")
     {
@@ -540,15 +538,16 @@ pub fn studio_start_runtime_setup(
     };
     *setup_guard = Some(setup.clone());
     drop(setup_guard);
+    drop(job_guard);
+    let owned_pid = setup.pid;
     let setup_app = app.clone();
     std::thread::spawn(move || {
         let result = child.wait();
         let studio = setup_app.state::<StudioState>();
         if let Ok(mut guard) = studio.runtime_setup.lock() {
-            if guard
-                .as_ref()
-                .is_some_and(|current| current.status == "cancelled")
-            {
+            if !guard.as_ref().is_some_and(|current| {
+                current.status == "running" && current.pid == owned_pid
+            }) {
                 return;
             }
             let mut success = result.as_ref().is_ok_and(|status| status.success());
@@ -747,6 +746,7 @@ pub fn studio_start_job(
     expected_revision: i64,
     allow_gaps: Option<bool>,
 ) -> Result<Job, String> {
+    let mut guard = state.job.lock().map_err(|e| e.to_string())?;
     if state
         .runtime_setup
         .lock()
@@ -756,7 +756,6 @@ pub fn studio_start_job(
     {
         return Err("Wait for runtime installation to finish before processing media.".into());
     }
-    let mut guard = state.job.lock().map_err(|e| e.to_string())?;
     if guard.as_ref().is_some_and(|j| j.status == "running") {
         return Err("Only one GPU job can run at a time.".into());
     }
