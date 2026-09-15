@@ -22,6 +22,7 @@ Trang hướng dẫn có tìm kiếm, mục lục, giao diện mobile và bản 
 - [Import và quản lý nguồn](https://pecora31.github.io/SyncCut/vi/sources/)
 - [Voiceover và căn chỉnh script](https://pecora31.github.io/SyncCut/vi/recording/)
 - [Duyệt cảnh và candidate](https://pecora31.github.io/SyncCut/vi/scenes/)
+- [Hướng dẫn giao diện bằng hình ảnh](https://pecora31.github.io/SyncCut/vi/visual-guide/)
 - [Timeline và xuất sang Premiere](https://pecora31.github.io/SyncCut/vi/timeline/)
 - [Xử lý lỗi](https://pecora31.github.io/SyncCut/vi/troubleshooting/)
 

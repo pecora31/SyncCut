@@ -56,6 +56,7 @@ nav:
   - Bắt đầu:
       - Yêu cầu hệ thống: vi/requirements.md
       - Cài đặt lần đầu: vi/first-run.md
+      - Hướng dẫn giao diện bằng hình ảnh: vi/visual-guide.md
       - Tạo project và import nguồn: vi/sources.md
   - Quy trình làm việc:
       - Tổng quan 4 bước: vi/workflow.md
