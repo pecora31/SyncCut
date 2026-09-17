@@ -4,6 +4,8 @@
 
 Phiên bản hiện tại là nền tảng giai đoạn 1: nhập file, kiểm tra source với FFprobe, tạo timeline dự phòng phủ kín voiceover và xuất XML. Chưa cài model AI hoặc tuyên bố đã chọn cảnh theo ngữ nghĩa.
 
+Ứng dụng có nút **Cập nhật app**. Bản mới được tải từ GitHub Releases, kiểm tra chữ ký trước khi cài và Windows hiển thị tiến trình cài đặt.
+
 ## Quy tắc an toàn của pipeline
 
 - Giữ nguyên voiceover gốc.

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "SyncCut",
-  "version": "0.1.0",
-  "identifier": "com.synccut.app",
+  "version": "0.1.0-alpha.1",
+  "identifier": "io.github.pecora31.synccut",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -17,7 +17,14 @@
     "active": true,
     "targets": "nsis",
     "resources": ["../engine"],
+    "createUpdaterArtifacts": true,
     "windows": {"webviewInstallMode": {"type": "downloadBootstrapper"}}
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNGOUIwRDNFOTE0ODBFRUIKUldUckRraVJQZzJiUC9UZnBsd2RKWXA3dk9ERU5Ka0phc0kxRGVCUVp1SDBRYlBmRXg0b1hGVVYK",
+      "endpoints": ["https://github.com/pecora31/SyncCut/releases/latest/download/latest.json"],
+      "windows": {"installMode": "passive"}
+    }
   }
 }
-

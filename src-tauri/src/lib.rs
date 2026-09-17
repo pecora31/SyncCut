@@ -50,6 +50,7 @@ fn run_engine(app: AppHandle, args: Vec<String>) -> Result<EngineResult, String>
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![run_engine, project_workspace])
         .run(tauri::generate_context!())
         .expect("error while running SyncCut");

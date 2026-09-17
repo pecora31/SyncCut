@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { check } from "@tauri-apps/plugin-updater";
 import "./styles.css";
 
 type EngineReply = { ok: boolean; output: string };
@@ -37,6 +38,8 @@ function App() {
   const [logPath, setLogPath] = useState<string | null>(null);
   const [plan, setPlan] = useState<PlanSummary | null>(null);
   const [busy, setBusy] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<"voice" | "visual">("visual");
 
   const canProcess = Boolean(voiceover && visuals.length && !busy);
@@ -121,8 +124,29 @@ function App() {
     finally { setBusy(false); }
   }
 
+  async function updateApp() {
+    setUpdating(true); setUpdateProgress(null); setStatus("Đang kiểm tra bản cập nhật…");
+    try {
+      const update = await check();
+      if (!update) { setStatus("Bạn đang dùng bản SyncCut mới nhất."); return; }
+      setStatus(`Đang tải SyncCut ${update.version}…`);
+      let downloaded = 0;
+      let total = 0;
+      await update.downloadAndInstall((event) => {
+        if (event.event === "Started") total = event.data.contentLength ?? 0;
+        if (event.event === "Progress") {
+          downloaded += event.data.chunkLength;
+          setUpdateProgress(total ? Math.round((downloaded / total) * 100) : null);
+        }
+      });
+      setStatus("Cập nhật đã sẵn sàng cài đặt. Ứng dụng sẽ đóng để Windows hoàn tất.");
+    } catch (error) {
+      setStatus(error instanceof Error ? `Không thể cập nhật: ${error.message}` : "Không thể kiểm tra cập nhật.");
+    } finally { setUpdating(false); }
+  }
+
   return <main>
-    <header><div><span className="eyebrow">LOCAL ASSEMBLY FOR PREMIERE</span><h1>SyncCut</h1></div><div className="status"><span className={busy ? "dot working" : "dot"} />{status}</div></header>
+    <header><div><span className="eyebrow">LOCAL ASSEMBLY FOR PREMIERE</span><h1>SyncCut</h1></div><div className="header-actions"><button className="quiet" disabled={updating} onClick={() => void updateApp()}>{updating ? (updateProgress === null ? "Đang kiểm tra…" : `Đang tải ${updateProgress}%`) : "Cập nhật app"}</button><div className="status"><span className={(busy || updating) ? "dot working" : "dot"} />{status}</div></div></header>
     <section className="intro"><h2>Nhập source, dựng bản nháp, xuất XML.</h2><p>Voiceover luôn được giữ nguyên. Hình sẽ phủ kín timeline; các cảnh thay thế được đánh dấu để hậu kỳ trong Premiere.</p></section>
     <section className="source-grid">
       <div className="source-card" onDragEnter={() => setDropTarget("voice")}>
