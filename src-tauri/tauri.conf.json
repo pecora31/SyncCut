@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SyncCut",
+  "version": "0.1.0",
+  "identifier": "com.synccut.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{"title": "SyncCut", "width": 1240, "height": 820, "minWidth": 900, "minHeight": 640}],
+    "security": {"csp": null}
+  },
+  "bundle": {
+    "active": true,
+    "targets": "nsis",
+    "resources": ["../engine"],
+    "windows": {"webviewInstallMode": {"type": "downloadBootstrapper"}}
+  }
+}
+
