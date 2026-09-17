@@ -1,0 +1,9 @@
+{
+  "version": "0.1.0-alpha.1",
+  "platforms": {
+    "windows-x86_64": {
+      "url": "https://github.com/pecora31/SyncCut/releases/download/v0.1.0-alpha.1/SyncCut_0.1.0-alpha.1_x64-setup.exe",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUckRraVJQZzJiUDFvWVp1UFk5SzBrN3FhUFFPczJzRlUxLzZMV3E4RW95c0RnVGZhWHBsQ1lwWmR3aEI0Y3JTbDVJbW5NVDZRVHU0WVptcHN1ZXpGSTZhZEQrV3lHZ0EwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NjM3Nzg1CWZpbGU6U3luY0N1dF8wLjEuMC1hbHBoYS4xX3g2NC1zZXR1cC5leGUKOVI4eWg3aEZBZ1RqWmlDbGJhNFdiUU5lemJRR3lHMGhJVXhkRVpJVWhsRm5FVGVOanFGa2d1QmgwbGNxWFFYaTV1NGRoQWt0R3FUellTZ0NMdHdCQ2c9PQo="
+    }
+  }
+}
